@@ -17,6 +17,8 @@ from fractions import Fraction
 from collections import Counter
 from functools import reduce
 from operator import or_
+import torch
+import numpy as np
 
 try:
     from nltk import ngrams
@@ -199,6 +201,37 @@ def sentence_bleu_nbest(reference, hypotheses, weights=(0.25, 0.25, 0.25, 0.25),
     _bp = min(math.exp(1 - ref_len / hyp_len), 1.0)
     return _bp * math.exp(math.fsum(segment_pn))
 
+def batch_bleu(reference, hypotheses):
+    """
+    :param reference: A index variable of size (seq, b)
+    :param hypotheses: A index variable of size (seq, b)
+    :return: rewards_tensor_batch: A tensor of size (seq, b)
+    """
+    # Towards: a list of lists containing sentence of each batch
+    _, batch_size = reference.size()
+    reference = reference.view(batch_size, -1).data.numpy().tolist()
+    hypotheses = hypotheses.view(batch_size, -1).data.numpy().tolist()
+    # str_list = map(str, int_list)
+    rewards_batch = []
+    for ref_list, hyp_list in zip(reference, hypotheses):
+        ref_list = map(str, ref_list)
+        hyp_list = map(str, hyp_list)
+        len_hyp = len(hyp_list)
+        bleus_step = []
+        for i in range(1, len_hyp):
+            bleu_score = sentence_bleu_nbest(ref_list, hyp_list[:i])
+            bleus_step.append(bleu_score)
+        rewards_step = []
+        for i in range(len(bleus_step)):
+            if i == 0:
+                rewards_step.append(bleus_step[i])
+            else:
+                rewards_step.append(bleus_step[i] - bleus_step[i-1])
+        rewards_tensor = torch.from_numpy(np.array(rewards_step))
+        rewards_tensor = torch.autograd.Variable(rewards_tensor) # (seq_len)
+        rewards_batch.append(rewards_tensor)
+    rewards_tensor_batch = torch.stack(rewards_batch, dim=1) # (seq_len, batch)
+    return rewards_tensor_batch
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Arguments for calculating BLEU')

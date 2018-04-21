@@ -10,7 +10,7 @@ import onmt.io
 import onmt.Models
 import onmt.modules
 from onmt.Models import NMTModel, MeanEncoder, RNNEncoder, \
-                        StdRNNDecoder, InputFeedRNNDecoder
+                        StdRNNDecoder, InputFeedRNNDecoder, RL_Model
 from onmt.modules import Embeddings, ImageEncoder, CopyGenerator, \
                          TransformerEncoder, TransformerDecoder, \
                          CNNEncoder, CNNDecoder, AudioEncoder, DdpgOffPolicy
@@ -251,9 +251,12 @@ def make_RL_model(model_opt, fields, gpu, checkpoint=None):
         checkpoint: the model gnerated by train phase, or a resumed snapshot
                     model from a stopped training.
     Returns:
-        the NMTModel.
+        the RL-Model.
     """
+
+    # Only support text now.
     assert model_opt.model_type is "text"
+
     # Make encoder.
     src_dict = fields["src"].vocab
     feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
@@ -275,10 +278,6 @@ def make_RL_model(model_opt, fields, gpu, checkpoint=None):
 
         tgt_embeddings.word_lut.weight = src_embeddings.word_lut.weight
 
-    # Make NMTModel(= encoder + decoder).
-    model = NMTModel(encoder, decoder)
-    model.model_type = model_opt.model_type
-
     # Make Generator.
     if not model_opt.query_generator:
         if not model_opt.copy_attn:
@@ -286,14 +285,22 @@ def make_RL_model(model_opt, fields, gpu, checkpoint=None):
                 nn.Linear(model_opt.rnn_size, len(fields["tgt"].vocab)),
                 nn.LogSoftmax(dim=-1))
             if model_opt.share_decoder_embeddings:
-                generator[0].weight = decoder.embeddings.word_lut.weight
+                generator[0].weight = tgt_embeddings.word_lut.weight
         else:
             generator = CopyGenerator(model_opt.rnn_size,
                                       fields["tgt"].vocab)
     else:
         generator = DdpgOffPolicy.QueryGenerator(model_opt,
-                                                 decoder.embeddings,
+                                                 tgt_embeddings,
                                                  len(fields["tgt"].vocab))
+
+    # Make RL_Model
+    model = RL_Model(model_opt,
+                     src_embeddings,
+                     tgt_embeddings,
+                     generator)
+    model.model_type = model_opt.model_type
+
     # Load the model states from checkpoint or initialize them.
     if checkpoint is not None:
         print('Loading model parameters.')

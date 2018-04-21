@@ -9,7 +9,9 @@ from onmt.ModelConstructor import make_encoder, make_decoder
 
 class QueryGenerator(nn.Module):
     """
-        Using query to get the word distribution, where key and value is the word matrix.
+        Using a query to get the word distribution using multi-head attention,
+        where key and value is the word matrix.\
+        Using the attention distribution as scorer.
     """
     def __init__(self, model_opt,
                  dec_embed_layer,
@@ -31,20 +33,22 @@ class QueryGenerator(nn.Module):
         :return: output: tensor of size (seq_len, batch, vocab_size)
         """
 
-        action_embeded = self.action_to_embed(action).view(-1, self.batch_size, self.embed_dim)
-        action_embeded = self.layer_norm(action_embeded)
-        # tensor of size (batch, seq_len, embed_dim)
-        vocab = torch.arange(end = self.vocab_size).long()
-        # tensor of size (vocab_size)
+        action_embeded = self.action_to_embed(action)
+        action_embeded = action_embeded.view(self.batch_size, -1, self.embed_dim)
+        action_embeded = self.layer_norm(action_embeded) # (b, seq_len, embed_dim)
 
-        vocab = vocab.expand(self.batch_size, self.vocab_size)
-        word_matrix = self.dec_embed_layer(vocab) # (batch, vocab_size, emb_size)
-        # #TODO: improve the use of memory
+        # vocab = torch.arange(end = self.vocab_size).long() # (vocab_size)
+        #
+        # vocab = vocab.expand(self.batch_size, self.vocab_size) # (b, vocab_size)
+        # word_matrix = self.dec_embed_layer(vocab) # (b, vocab_size, embed_dim)
+        emb_weight = self.dec_embed_layer.word_lut.weight # (vocab_size, embed_dim)
+        word_matrix = emb_weight.expand(self.batch_size, self.vocab_size, self.embed_dim) # (b, vocab_size, embed_dim)
+        #TODO: improve the use of memory
 
         _, attn = self.atten_layer(action_embeded, action_embeded, word_matrix)
         # tensor of size (batch, seq_len, vocab_size)
         output = torch.log(attn)
-        # a LogSoftmax in the std generator
+        # Work as LogSoftmax after a query in the std generator
         output = output.view(-1, self.batch_size, self.vocab_size)
         # tensor of size (seq_len, batch, vocab_size)
 
@@ -52,7 +56,7 @@ class QueryGenerator(nn.Module):
 
 class DDPG_Encoder(nn.Module):
     """
-        For ddpg algorithm, we need to save two networks(sharing one embeddings).
+        Encode the src sentence. Can use any encoder OpenNMT supports.
     """
     def __init__(self, model_opt, embeddings):
         super(DDPG_Encoder, self).__init__()
@@ -64,7 +68,7 @@ class DDPG_Encoder(nn.Module):
 
 class ActorProjector(nn.Module):
     """
-    Project a high dimension hidden layer into a low dimension action using a resnet.
+    Project a high dimension hidden layer into a low dimension action, using a resnet.
     Use it if query_generator is True.
     """
     def __init__(self, model_opt):
@@ -89,77 +93,87 @@ class ActorProjector(nn.Module):
 
 class DDPG_OffPolicyDecoderLayer(nn.Module):
     """
-    In off-policy mode, decoder can generate a sequence without adding noise.
-    For ddpg algorithm, we need to save two networks(sharing one embeddings).
-    TODO: also need a MLE.
-    TODO: support of test stage.
+    The actor network.
+    Work as a base decoder of OpenNMT when train_mode == False.
+    When train_mode == True, decode using a greedy strategy.
     """
     def __init__(self, model_opt, embeddings, generator):
 
         super(DDPG_OffPolicyDecoderLayer, self).__init__()
         self.decoder_type = model_opt.decoder_type
         self.using_query = model_opt.query_generator
-        self.target_decoder = make_decoder(model_opt, embeddings)
+        self.decoder = make_decoder(model_opt, embeddings)
         self.generator = generator
         self.max_length = 100
         if self.using_query:
             assert isinstance(self.generator, QueryGenerator)
-            self.target_projector = ActorProjector(model_opt)
+            self.projector = ActorProjector(model_opt)
 
-    def forward(self, tgt, memory_bank, state,
+    def forward(self, tgt,
+                memory_bank,
+                state,
                 memory_lengths=None,
                 train_mode=False,
                 noise=False):
 
         if not train_mode:
-            outputs, state, attns = self.target_decoder(tgt, memory_bank, state)
+            # Work as a std OpenNMT decoder.
+            action, state, attns = self.decoder(tgt, memory_bank, state)
             if self.using_query:
-                outputs = self.target_projector(outputs)
-            return outputs, state, attns
+                action = self.projector(action)
+            return action, state, attns
         else:
+            # Decode using a greedy strategy
             hyp_seqs = []
             one_hot_seqs = []
             states_list = []
-            states_list.append(state)
-
             actions_list = []
 
-            inp = tgt[0, :, :].unsqueeze(0) # (1, b, n_feat)
-            one_hot_seqs.append(inp)
+            # states_list.append(state)
 
-            _, word_index = inp.max(2)  # (1, b)
-            hyp_seqs.append(word_index)
+            # [START_DECODE]
+            inp = tgt[0, :, :].unsqueeze(0) # (1, b, n_feat)
+            # one_hot_seqs.append(inp)
+
+            # _, word_index = inp.max(2)  # (1, b)
+            # hyp_seqs.append(word_index)
 
             for i in range(self.max_length):
-                outputs, state, attns = self.optim_decoder(inp, memory_bank, state)
+                action, state, attns = self.decoder(inp, memory_bank, state)
                 states_list.append(state)
 
                 if self.using_query:
-                    outputs = self.target_projector(outputs) # (1, b, action_dim)
-
+                    action = self.projector(action) # (1, b, action_dim)
+                # Add Guassian noise, N(0, 0.1)
                 if noise:
-                    outputs = outputs + torch.randn(outputs.size()) / 10.0
-                actions_list.append(outputs)
+                    action = action + torch.randn(action.size()) / 10.0
+                actions_list.append(action)
 
-                score = self.generator(outputs) # (1, b, n_feat)
+                score = self.generator(action) # (1, b, n_feat)
+                _, batch_size, n_feat = score.size()
                 _, word_index = score.max(2) # (1, b)
-                _, batch_size = word_index.size()
                 hyp_seqs.append(word_index)
 
-                word_one_hot = torch.zeros(batch_size).scatter_(dim=1, index=word_index, src=1) # (b, n_feat)
+                word_one_hot = torch.zeros(batch_size, n_feat).scatter_(dim=1,
+                                                                        index=word_index.view(-1, 1),
+                                                                        src=1) # (b, n_feat)
                 inp = word_one_hot.view(1, batch_size, -1)
                 one_hot_seqs.append(inp)
 
-            states = torch.stack(states_list, dim=0) # (seq_len, b, rnn_size)
-            actions = torch.stack(actions_list, dim=0)
-            hyps_index = torch.stack(hyp_seqs, dim=0)
-            hyps_one_hot = torch.stack(one_hot_seqs, dim=0)
+            states = torch.cat(states_list, dim=0) # (seq_len, b, rnn_size)
+            actions = torch.cat(actions_list, dim=0) # (seq_len, b, action_dim)
+            hyps_index = torch.cat(hyp_seqs, dim=0) # (seq_len, b)
+            hyps_one_hot = torch.cat(one_hot_seqs, dim=0) # (seq_len, b, n_feat)
 
             return states, actions, hyps_index, hyps_one_hot
 
 class ddpg_critic_layer(nn.Module):
     """
-    The critic network. We use a transformer layer here.
+    The critic network.
+    We use a transformer encoder-decoder here.
+    Encoder encodes tgt sentence.
+    Decoder use hyp actions & states querying tgt hidden states, \
+    and generate values after a resnet output layer.
     """
     def __init__(self, model_opt, dec_embedding_layer, enc_embedding_layer):
 
@@ -182,12 +196,12 @@ class ddpg_critic_layer(nn.Module):
         self.hidden_size = hidden_size
         self.action_state_projecter = nn.Linear(self.rnn_size + self.action_size, self.embed_dim)
         self.res_layers_nums = 2
-        self.res_layers = nn.ModuleList([MLPResBlock(hidden_size, dropout=model_opt.drop_out) for _ in range(self.res_layers_nums)])
+        self.res_layers = nn.ModuleList([MLPResBlock(hidden_size, dropout=model_opt.drop_out)
+                                         for _ in range(self.res_layers_nums)])
         self.value_projector = nn.Linear(hidden_size, 1)
 
     def forward(self, states, tgt, actions, hyps_one_hot):
         """
-
         :param states: (seq_len, b, rnn_size)
         :param tgt: (seq_len, b, n_feat)
         :param actions: (seq_len, b, action_size)
@@ -196,12 +210,17 @@ class ddpg_critic_layer(nn.Module):
         """
         memory_bank, tgt_state, tgt_attns = self.tgt_encoder(tgt)
         query = self.action_state_projecter(torch.cat([states, actions], dim=-1)) # (seq_len, b, hidden_size)
-        output, src_state, src_attns = self.hyp_decoder(hyps_one_hot, memory_bank, tgt_state, query, memory_lengths=None)
+        output, _, _ = self.hyp_decoder(hyps_one_hot,
+                                        memory_bank,
+                                        tgt_state,
+                                        query,
+                                        memory_lengths=None)
         for i in range(self.res_layers_nums):
-            output = self.res_layers[i](output)
-        output = self.value_projector(output) # (b, seq_len, 1)
+            output = self.res_layers[i](output) # (seq_len, b, hidden_size)
+        output = self.value_projector(output) # (seq_len, b, 1)
+        # BLEU will be lower after generating meaningless tokens, so Q can be neg.
+        # Also, bleu will not be larger then 1.
         output = torch.tanh(output)
-        # BLEU will be lower if generating lots of meaningless tokens so Q can be neg.
 
         raise output
 
@@ -218,9 +237,8 @@ class MLPResBlock(nn.Module):
 
     def forward(self, input):
         """
-
         :param input: tensor of size (b, *, hidden_size)
-        :return: output: tensor of size (b, *, hidden_size)
+        :return: output: tensor of size the same as input
         """
         x = self.linear_layer(input)
         x = self.relu(x)
@@ -231,22 +249,8 @@ class MLPResBlock(nn.Module):
 
 class TransformerDecoderWithStates(nn.Module):
     """
-    The Transformer decoder from "Attention is All You Need".
-
-
-    .. mermaid::
-
-       graph BT
-          A[input]
-          B[multi-head self-attn]
-          BB[multi-head src-attn]
-          C[feed forward]
-          O[output]
-          A --> B
-          B --> BB
-          BB --> C
-          C --> O
-
+    Compare with the origin transformer decoder,
+    here we add a extra state & action query vector on word query.
 
     Args:
        num_layers (int): number of encoder layers.
@@ -282,7 +286,7 @@ class TransformerDecoderWithStates(nn.Module):
 
     def forward(self, tgt, memory_bank, state, query, memory_lengths=None):
         """
-        See :obj:`onmt.modules.RNNDecoderBase.forward()`
+        Query should have size (tgt_seq_len, b, emb_size)
         """
         # CHECKS
         assert isinstance(state, TransformerDecoderState)

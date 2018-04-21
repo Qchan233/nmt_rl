@@ -592,6 +592,7 @@ def main():
     # Report src/tgt features.
     collect_report_features(fields)
 
+    # When alpha_divergence == 0.0, use std MLE.
     if opt.RL_algorithm is None or opt.alpha_divergence == 0.0:
         # Build model.
         model = build_model(model_opt, opt, fields, checkpoint)
@@ -605,7 +606,9 @@ def main():
         train_model(model, fields, optim, data_type, model_opt)
 
     else:
-        assert opt.alpha_divergence == 1.0 # TODO: Not support alpha_divergence.
+        # TODO: Not support alpha_divergence yet.
+        assert opt.alpha_divergence == 1.0
+
         # Build RL model
         model = build_RL_model(model_opt, opt, fields, checkpoint)
         tally_parameters(model)
@@ -615,6 +618,7 @@ def main():
         optim_actor, optim_critic = build_RL_optim(model, checkpoint)
 
         # Do training
+        #TODO
 
     # If using tensorboard for logging, close the writer after training.
     if opt.tensorboard:

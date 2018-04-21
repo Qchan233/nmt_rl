@@ -12,6 +12,8 @@ from onmt.modules.DdpgOffPolicy import *
 import onmt
 from onmt.Utils import aeq
 
+from modules.bleu import batch_bleu
+
 
 def rnn_factory(rnn_type, **kwargs):
     # Use pytorch version when available.
@@ -551,8 +553,9 @@ class RL_Model(nn.Module):
     def __init__(self, model_opt,
                  enc_embed_layer,
                  dec_embed_layer,
-                 generator,
-                 vocab_size):
+                 generator):
+
+        super(RL_Model, self).__init__()
         self.generator = generator
         self.encoder = make_encoder(model_opt, enc_embed_layer)
         self.target_decoder = DDPG_OffPolicyDecoderLayer(model_opt,
@@ -568,15 +571,21 @@ class RL_Model(nn.Module):
                                               dec_embed_layer,
                                               enc_embed_layer)
         self.alpha_divergence = model_opt.alpha_divergence
-
+        self.gamma = model_opt.gamma
     def forward(self, src, tgt, lengths, dec_state=None, train_mode=False):
+        """
+        Input is the same as std model.
+        """
         tgt = tgt[:-1]  # exclude last target from inputs
 
+        # Encode source sentence.
+        # Encoder will not be optimized during RL optimize mode.
         enc_final, memory_bank = self.encoder(src, lengths)
         enc_state = \
             self.decoder.target_decoder.init_decoder_state(src, memory_bank, enc_final)
 
-        # MLE Optimize
+        # MLE Optimize.
+        # Support default OpenNMT interface
         if not train_mode:
             decoder_outputs, dec_state, attns = \
                 self.target_critic(tgt, memory_bank,
@@ -584,29 +593,87 @@ class RL_Model(nn.Module):
                                   else dec_state,
                                   memory_lengths=lengths)
             return decoder_outputs, attns, dec_state
-        # EL Optimize
+
+        # RL Optimize
         else:
             # TODO: Not support alpha_divergence! On training stage, MLE optimizer will not run.
             # RL Loss
-            #
-            optim_states, optim_actions, optim_hyps_index, optim_hyps_one_hot = self.optim_decoder(tgt,
+            # Sample a sequence using Guassian noises.
+            sample_states, sample_actions, sample_hyps_index, sample_hyps_one_hot = self.optim_decoder(tgt,
                                                                                                    memory_bank,
                                                                                                    enc_state,
                                                                                                    memory_lengths=lengths,
                                                                                                    train_mode=True,
                                                                                                    noise=True)
-            # Compute y_t using target decoder. As the environment is deterministic, we can use \
-            # optim_hyps_one_hot as tgt to generator a non-noise sequence.
-            target_outputs, _, _ = \
-                self.target_decoder(optim_hyps_one_hot,
+            # y_t = r_t + gamma * value_{t+1} (s_{t+1}, \mu ' _ (s_{t+1}))
+            # Compute y_t using target decoder. As the environment is deterministic by action, we can use \
+            # optim_hyps_one_hot as tgt ,like teacher force mode, to generator a non-noise sequence.
+            # We use \mu ' to generate a sequence based on hyp sequences.
+            target_actions, target_state, _ = \
+                self.target_decoder(sample_hyps_one_hot,
                                     memory_bank,
                                     enc_state if dec_state is None
                                     else dec_state,
                                     memory_lengths=lengths)
-            if self.target_decoder.using_query:
-                target_outputs = self.target_decoder.target_projector(target_outputs)  # (seq_len, b, action_dim)
-            score = self.target_decoder.generator(target_outputs) # (seq_len, b, action_dim)
 
+            if self.target_decoder.using_query:
+                target_actions = self.target_decoder.projector(target_actions)
+                # (seq_len, b, action_dim)
+            hyp_score = self.target_decoder.generator(target_actions) # (seq_len, b, n_feat)
+
+            seq_len, batch_size, n_feat = hyp_score.size()
+            _, hyps_index = hyp_score.max(2) # (seq_len, b)
+            target_hyps_one_hot = torch.zeros(hyp_score.size()).scatter_(dim=2,
+                                                                         index=hyps_index,
+                                                                         src=1)
+            # (seq_len, b, n_feat)
+            _, tgts_index = tgt.max(2)
+
+            # Get rewards for every step.
+            rewards = batch_bleu(tgts_index, hyps_index) # (seq, b)
+
+            # We need r_t meets with Q ' _{t+1}, \
+            # and values[-1, :] is fully zero as the sequences are done there.
+            # Values[0, :] is never used, so we can drop it.
+            values = self.target_critic(target_state,
+                                        tgt,
+                                        target_actions,
+                                        target_hyps_one_hot).view(rewards.size()) # (seq, b)
+            values_zero = torch.autograd.Variable(torch.zero(1, batch_size)) # values[-1, :]
+            values = torch.cat([values[1:, :], values_zero], dim=0) # (seq, b)
+            # Compute y_t = r_t + gamma * value_{t+1} (s_{t+1}, \mu ' _ (s_{t+1}))
+            ys = rewards + self.gamma * values # (seq, b)
+
+            # Compute Q(s_t, a_t), where a_t is sampled action.
+            values_fit = self.optim_critic(sample_states,
+                                           tgt,
+                                           sample_actions,
+                                           target_hyps_one_hot).view(rewards.size())
+
+            # Make decision on {s_t} using \mu. \
+            # Use teacher force like \mu ' above.
+            optim_actions, optim_states, _ = \
+                self.optim_decoder(sample_hyps_one_hot,
+                                   memory_bank,
+                                   enc_state if dec_state is None
+                                   else dec_state,
+                                   memory_lengths=lengths)
+
+            if self.optim_decoder.using_query:
+                optim_actions = self.optim_decoder.projector(optim_actions)  # (seq_len, b, action_dim)
+            optim_score = self.optim_decoder.generator(optim_actions) # (seq_len, b, n_feat)
+
+            _, optim_index = optim_score.max(2)  # (seq_len, b)
+            optim_hyps_one_hot = torch.zeros(optim_score.size()).scatter_(dim=2, index=optim_index, src=1)
+
+            # Compute Q(s_t, \mu (s_t))
+            values_optim = self.optim_critic(optim_states,
+                                             tgt,
+                                             optim_actions,
+                                             optim_hyps_one_hot).view(rewards.size()) # (seq, b)
+
+            # {y_t}, {Q(s_t, a_t)}, {Q(s_t, \mu (s_t))}
+            return ys, values_fit, values_optim
 
 class NMTModel(nn.Module):
     """
