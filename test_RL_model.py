@@ -127,7 +127,7 @@ class TestModel(unittest.TestCase):
                                                  embeddings_dec,
                                                  len(word_dict))
 
-        model = RL_Model(opt, embeddings_enc, embeddings_dec, generator)
+        model = onmt.Models.RL_Model(opt, embeddings_enc, embeddings_dec, generator)
 
         test_src, test_tgt, test_length = self.get_batch(source_l=source_l,
                                                          bsize=bsize)
@@ -136,8 +136,7 @@ class TestModel(unittest.TestCase):
                                  test_length)
         outputsize = torch.zeros(source_l - 1, bsize, opt.rnn_size)
         # Make sure that output has the correct size and type
-        print ys, values_fit, values_optim
-
+        print values_fit
 def _add_test(param_setting, methodname):
     """
     Adds a Test to TestModel according to settings
