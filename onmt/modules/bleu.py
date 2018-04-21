@@ -99,10 +99,6 @@ def corpus_bleu(list_of_references, hypotheses, weights=(0.25, 0.25, 0.25, 0.25)
 
     # Final bleu score.
     score = bp * math.exp(math.fsum(p_n))
-    bleu_output = ("BLEU = {}, {} (BP={}, ratio={}, hyp_len={}, ref_len={})".format(
-        round(score * 100, 2), '/'.join(map(str, [round(p_i * 100, 1) for p_i in p_n_str])),
-        round(bp, 3), round(hyp_lengths / ref_lengths, 3), hyp_lengths, ref_lengths))
-    print(bleu_output, file=sys.stderr)
     return score, p_n_str, hyp_lengths, ref_lengths
 
 
@@ -190,15 +186,18 @@ def chen_and_cherry(references, hypothesis, p_n, hyp_len,
 
 def sentence_bleu_nbest(reference, hypotheses, weights=(0.25, 0.25, 0.25, 0.25),
                         smoothing=0, epsilon=0.1, alpha=5, k=5):
-    for hi, hypothesis in enumerate(hypotheses):
-        print('Translation {}... '.format(hi), file=sys.stderr, end="")
-        bleu_output = corpus_bleu([(reference,)], [hypothesis], weights)
-        bleu_score, p_n, hyp_len, ref_len = bleu_output
-        p_n = chen_and_cherry(reference, hypotheses, p_n, hyp_len, smoothing, epsilon)
-        segment_pn = [w * math.log(p_i) if p_i != 0 else 0 for p_i, w in
-                      zip(p_n, weights)]
-        _bp = min(math.exp(1 - ref_len / hyp_len), 1.0)
-        yield _bp * math.exp(math.fsum(segment_pn))
+    """
+    :param reference: a list of words, like ['hallo' , ',', 'world']
+    :param hypotheses: a list of words, like ['hallo' , ',', 'world']
+    :return: a float
+    """
+    bleu_output = corpus_bleu([(reference,)], [hypotheses], weights)
+    bleu_score, p_n, hyp_len, ref_len = bleu_output
+    p_n = chen_and_cherry(reference, hypotheses, p_n, hyp_len, smoothing, epsilon)
+    segment_pn = [w * math.log(p_i) if p_i != 0 else 0 for p_i, w in
+                  zip(p_n, weights)]
+    _bp = min(math.exp(1 - ref_len / hyp_len), 1.0)
+    return _bp * math.exp(math.fsum(segment_pn))
 
 
 if __name__ == '__main__':

@@ -562,10 +562,13 @@ class RL_Model(nn.Module):
                                                       dec_embed_layer,
                                                       self.generator)
         self.target_critic = ddpg_critic_layer(model_opt,
-                                               dec_embed_layer)
+                                               dec_embed_layer,
+                                               enc_embed_layer)
         self.optim_critic = ddpg_critic_layer(model_opt,
-                                              dec_embed_layer)
+                                              dec_embed_layer,
+                                              enc_embed_layer)
         self.alpha_divergence = model_opt.alpha_divergence
+
     def forward(self, src, tgt, lengths, dec_state=None, train_mode=False):
         tgt = tgt[:-1]  # exclude last target from inputs
 
@@ -573,6 +576,7 @@ class RL_Model(nn.Module):
         enc_state = \
             self.decoder.target_decoder.init_decoder_state(src, memory_bank, enc_final)
 
+        # MLE Optimize
         if not train_mode:
             decoder_outputs, dec_state, attns = \
                 self.target_critic(tgt, memory_bank,
@@ -580,14 +584,28 @@ class RL_Model(nn.Module):
                                   else dec_state,
                                   memory_lengths=lengths)
             return decoder_outputs, attns, dec_state
+        # EL Optimize
         else:
             # TODO: Not support alpha_divergence! On training stage, MLE optimizer will not run.
             # RL Loss
-            states, actions, hyp_seqs = self.target_decoder(tgt, memory_bank, enc_state,
-                                                  memory_lengths=lengths)
-            return states, actions, hyp_seqs
-
-
+            #
+            optim_states, optim_actions, optim_hyps_index, optim_hyps_one_hot = self.optim_decoder(tgt,
+                                                                                                   memory_bank,
+                                                                                                   enc_state,
+                                                                                                   memory_lengths=lengths,
+                                                                                                   train_mode=True,
+                                                                                                   noise=True)
+            # Compute y_t using target decoder. As the environment is deterministic, we can use \
+            # optim_hyps_one_hot as tgt to generator a non-noise sequence.
+            target_outputs, _, _ = \
+                self.target_decoder(optim_hyps_one_hot,
+                                    memory_bank,
+                                    enc_state if dec_state is None
+                                    else dec_state,
+                                    memory_lengths=lengths)
+            if self.target_decoder.using_query:
+                target_outputs = self.target_decoder.target_projector(target_outputs)  # (seq_len, b, action_dim)
+            score = self.target_decoder.generator(target_outputs) # (seq_len, b, action_dim)
 
 
 class NMTModel(nn.Module):
