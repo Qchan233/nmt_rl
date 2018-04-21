@@ -3,9 +3,9 @@ import torch.nn as nn
 import onmt.modules
 import torch.nn.functional as F
 from MultiHeadedAttn import MultiHeadedAttention
+import onmt
 from onmt.Utils import aeq
 from onmt.modules.Transformer import TransformerEncoder, TransformerDecoder, TransformerDecoderState, TransformerDecoderLayer
-from onmt.ModelConstructor import make_encoder, make_decoder
 
 class QueryGenerator(nn.Module):
     """
@@ -59,7 +59,7 @@ class DDPG_Encoder(nn.Module):
     """
     def __init__(self, model_opt, embeddings):
         super(DDPG_Encoder, self).__init__()
-        self.encoder = make_encoder(model_opt, embeddings)
+        self.encoder = onmt.ModelConstructor.make_encoder(model_opt, embeddings)
 
     def forward(self, input, lengths=None, encoder_state=None):
 
@@ -101,7 +101,7 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
         super(DDPG_OffPolicyDecoderLayer, self).__init__()
         self.decoder_type = model_opt.decoder_type
         self.using_query = model_opt.query_generator
-        self.decoder = make_decoder(model_opt, embeddings)
+        self.decoder = onmt.ModelConstructor.make_decoder(model_opt, embeddings)
         self.generator = generator
         self.max_length = 100
         if self.using_query:

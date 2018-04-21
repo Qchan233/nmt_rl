@@ -7,12 +7,15 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence as pack
 from torch.nn.utils.rnn import pad_packed_sequence as unpack
 
-from onmt.modules.DdpgOffPolicy import *
-
 import onmt
+
 from onmt.Utils import aeq
 
-from modules.bleu import batch_bleu
+# from onmt.ModelConstructor import make_encoder
+
+# from onmt.modules.DdpgOffPolicy import DDPG_OffPolicyDecoderLayer, ddpg_critic_layer
+
+# from onmt.modules.bleu import batch_bleu
 
 
 def rnn_factory(rnn_type, **kwargs):
@@ -557,17 +560,17 @@ class RL_Model(nn.Module):
 
         super(RL_Model, self).__init__()
         self.generator = generator
-        self.encoder = make_encoder(model_opt, enc_embed_layer)
-        self.target_decoder = DDPG_OffPolicyDecoderLayer(model_opt,
+        self.encoder = onmt.ModelConstructor.make_encoder(model_opt, enc_embed_layer)
+        self.target_decoder = onmt.modules.DdpgOffPolicy.DDPG_OffPolicyDecoderLayer(model_opt,
                                                       dec_embed_layer,
                                                       self.generator)
-        self.optim_decoder = DDPG_OffPolicyDecoderLayer(model_opt,
+        self.optim_decoder = onmt.modules.DdpgOffPolicy.DDPG_OffPolicyDecoderLayer(model_opt,
                                                       dec_embed_layer,
                                                       self.generator)
-        self.target_critic = ddpg_critic_layer(model_opt,
+        self.target_critic = onmt.modules.DdpgOffPolicy.ddpg_critic_layer(model_opt,
                                                dec_embed_layer,
                                                enc_embed_layer)
-        self.optim_critic = ddpg_critic_layer(model_opt,
+        self.optim_critic = onmt.modules.DdpgOffPolicy.ddpg_critic_layer(model_opt,
                                               dec_embed_layer,
                                               enc_embed_layer)
         self.alpha_divergence = model_opt.alpha_divergence
@@ -630,7 +633,7 @@ class RL_Model(nn.Module):
             _, tgts_index = tgt.max(2)
 
             # Get rewards for every step.
-            rewards = batch_bleu(tgts_index, hyps_index) # (seq, b)
+            rewards = onmt.modules.bleu.batch_bleu(tgts_index, hyps_index) # (seq, b)
 
             # We need r_t meets with Q ' _{t+1}, \
             # and values[-1, :] is fully zero as the sequences are done there.
