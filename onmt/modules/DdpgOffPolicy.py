@@ -21,8 +21,7 @@ class QueryGenerator(nn.Module):
         self.embed_dim = model_opt.tgt_word_vec_size
         self.vocab_size = vocab_size
         self.batch_size = model_opt.batch_size
-        self.dec_embed_layer = nn.Embedding(self.vocab_size,self.embed_dim)
-        self.dec_embed_layer.weight = dec_embed_layer.word_lut.weight
+        self.dec_embed_layer = dec_embed_layer
         self.action_to_embed = nn.Linear(self.action_dim, self.embed_dim)
         self.layer_norm = onmt.modules.LayerNorm(self.embed_dim)
         self.atten_layer = MultiHeadedAttention(1, self.embed_dim, 0.1)
