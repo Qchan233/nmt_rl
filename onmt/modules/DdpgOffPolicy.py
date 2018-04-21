@@ -43,7 +43,6 @@ class QueryGenerator(nn.Module):
         emb_weight = self.dec_embed_layer.word_lut.weight # (vocab_size, embed_dim)
         word_matrix = emb_weight.expand(self.batch_size, self.vocab_size, self.embed_dim) # (b, vocab_size, embed_dim)
         #TODO: improve the use of memory
-
         _, attn = self.atten_layer(action_embeded, action_embeded, word_matrix)
         # tensor of size (batch, seq_len, vocab_size)
         output = torch.log(attn)
@@ -136,8 +135,8 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
 
             # _, word_index = inp.max(2)  # (1, b)
             # hyp_seqs.append(word_index)
-
             for i in range(self.max_length):
+
                 action, state, attns = self.decoder(inp, memory_bank, state)
                 states_list.append(state)
 
@@ -145,7 +144,7 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
                     action = self.projector(action) # (1, b, action_dim)
                 # Add Guassian noise, N(0, 0.1)
                 if noise:
-                    action = action + torch.randn(action.size()) / 10.0
+                    action = action + torch.autograd.Variable(torch.randn(action.size()) / 10.0)
                 actions_list.append(action)
 
                 score = self.generator(action) # (1, b, n_feat)
@@ -153,9 +152,10 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
                 _, word_index = score.max(2) # (1, b)
                 hyp_seqs.append(word_index)
 
-                word_one_hot = torch.zeros(batch_size, n_feat).scatter_(dim=1,
-                                                                        index=word_index.view(-1, 1),
-                                                                        src=1) # (b, n_feat)
+                word_one_hot = torch.zeros(batch_size, n_feat).scatter_(1,
+                                                                        word_index.view(-1, 1).data.long(),
+                                                                        1.0) # (b, n_feat)
+                word_one_hot = word_one_hot.long()
                 inp = word_one_hot.view(1, batch_size, -1)
                 one_hot_seqs.append(inp)
 
@@ -202,18 +202,18 @@ class ddpg_critic_layer(nn.Module):
     def forward(self, states, tgt, actions, hyps_one_hot):
         """
         :param states: (seq_len, b, rnn_size)
-        :param tgt: (seq_len, b, n_feat)
+        :param tgt: (tgt_seq_len, b, n_feat)
         :param actions: (seq_len, b, action_size)
-        :param hyps_one_hot: (seq_len, b, n_feat)
+        :param hyps_one_hot: (hyp_seq_len, b, n_feat)
         :return: output: the Q(a_t, s_t) for each time step. Tensor of size (seq_len, b, 1)
         """
         memory_bank, tgt_state, tgt_attns = self.tgt_encoder(tgt)
-        query = self.action_state_projecter(torch.cat([states, actions], dim=-1)) # (seq_len, b, hidden_size)
+        query = self.action_state_projecter(torch.cat([states, actions], dim=2)) # (seq_len, b, hidden_size)
         output, _, _ = self.hyp_decoder(hyps_one_hot,
                                         memory_bank,
                                         tgt_state,
                                         query,
-                                        memory_lengths=None)
+                                        memory_lengths=None) # (seq_len, b, hidden_state)
         for i in range(self.res_layers_nums):
             output = self.res_layers[i](output) # (seq_len, b, hidden_size)
         output = self.value_projector(output) # (seq_len, b, 1)
@@ -284,7 +284,7 @@ class TransformerDecoderWithStates(nn.Module):
 
     def forward(self, tgt, memory_bank, state, query, memory_lengths=None):
         """
-        Query should have size (tgt_seq_len, b, emb_size)
+        Query should have size (seq_len, b, emb_size)
         """
         # CHECKS
         assert isinstance(state, TransformerDecoderState)

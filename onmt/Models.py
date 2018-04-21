@@ -611,7 +611,7 @@ class RL_Model(nn.Module):
                                                                                                    memory_lengths=lengths,
                                                                                                    train_mode=True,
                                                                                                    noise=True)
-            # y_t = r_t + gamma * value_{t+1} (s_{t+1}, \mu ' _ (s_{t+1}))
+            # y_t = r_t + gamma * Q_{t+1} (s_{t+1}, \mu ' _ (s_{t+1}))
             # Compute y_t using target decoder. As the environment is deterministic by action, we can use \
             # optim_hyps_one_hot as tgt ,like teacher force mode, to generator a non-noise sequence.
             # We use \mu ' to generate a sequence based on hyp sequences.
@@ -620,41 +620,41 @@ class RL_Model(nn.Module):
                                     memory_bank,
                                     enc_state if dec_state is None
                                     else dec_state,
-                                    memory_lengths=lengths)
+                                    memory_lengths=lengths) # (max_dec_len, b, *)
 
             if self.target_decoder.using_query:
                 target_actions = self.target_decoder.projector(target_actions)
-                # (seq_len, b, action_dim)
-            hyp_score = self.target_decoder.generator(target_actions) # (seq_len, b, n_feat)
+                # (max_dec_len, b, action_dim)
+            hyp_score = self.target_decoder.generator(target_actions) # (max_dec_len, b, n_feat)
 
-            seq_len, batch_size, n_feat = hyp_score.size()
-            _, hyps_index = hyp_score.max(2) # (seq_len, b)
+            max_dec_len, batch_size, n_feat = hyp_score.size()
+            _, hyps_index = hyp_score.max(2) # (max_dec_len, b)
             target_hyps_one_hot = torch.zeros(hyp_score.size()).scatter_(dim=2,
                                                                          index=hyps_index,
                                                                          src=1)
-            # (seq_len, b, n_feat)
-            _, tgts_index = tgt.max(2)
+            # (max_dec_len, b, n_feat)
+            _, tgts_index = tgt.max(2) # (tgt_seq_len, b)
 
             # Get rewards for every step.
-            rewards = onmt.modules.bleu.batch_bleu(tgts_index, hyps_index) # (seq, b)
-
+            rewards = onmt.modules.bleu.batch_bleu(tgts_index, hyps_index) # (max_dec_len, b)
             # We need r_t meets with Q ' _{t+1}, \
             # and values[-1, :] is fully zero as the sequences are done there.
             # Values[0, :] is never used, so we can drop it.
             values = self.target_critic(target_state,
                                         tgt,
                                         target_actions,
-                                        target_hyps_one_hot).view(rewards.size()) # (seq, b)
+                                        target_hyps_one_hot).view(rewards.size()) # (max_dec_len, b)
             values_zero = torch.autograd.Variable(torch.zero(1, batch_size)) # values[-1, :]
-            values = torch.cat([values[1:, :], values_zero], dim=0) # (seq, b)
+            values = torch.cat([values[1:, :], values_zero], dim=0) # (max_dec_len, b)
             # Compute y_t = r_t + gamma * value_{t+1} (s_{t+1}, \mu ' _ (s_{t+1}))
-            ys = rewards + self.gamma * values # (seq, b)
+            ys = rewards + self.gamma * values # (max_dec_len, b)
 
             # Compute Q(s_t, a_t), where a_t is sampled action.
             values_fit = self.optim_critic(sample_states,
                                            tgt,
                                            sample_actions,
                                            target_hyps_one_hot).view(rewards.size())
+            # (max_dec_len, b)
 
             # Make decision on {s_t} using \mu. \
             # Use teacher force like \mu ' above.
@@ -666,10 +666,10 @@ class RL_Model(nn.Module):
                                    memory_lengths=lengths)
 
             if self.optim_decoder.using_query:
-                optim_actions = self.optim_decoder.projector(optim_actions)  # (seq_len, b, action_dim)
-            optim_score = self.optim_decoder.generator(optim_actions) # (seq_len, b, n_feat)
+                optim_actions = self.optim_decoder.projector(optim_actions)  # (max_dec_len, b, action_dim)
+            optim_score = self.optim_decoder.generator(optim_actions) # (max_dec_len, b, n_feat)
 
-            _, optim_index = optim_score.max(2)  # (seq_len, b)
+            _, optim_index = optim_score.max(2)  # (max_dec_len, b)
             optim_hyps_one_hot = torch.zeros(optim_score.size()).scatter_(dim=2, index=optim_index, src=1)
 
             # Compute Q(s_t, \mu (s_t))
@@ -677,7 +677,6 @@ class RL_Model(nn.Module):
                                              tgt,
                                              optim_actions,
                                              optim_hyps_one_hot).view(rewards.size()) # (seq, b)
-
             # {y_t}, {Q(s_t, a_t)}, {Q(s_t, \mu (s_t))}
             return ys, values_fit, values_optim
 
