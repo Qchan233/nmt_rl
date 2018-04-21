@@ -588,13 +588,13 @@ class RL_Model(nn.Module):
         # Encoder will not be optimized during RL optimize mode.
         enc_final, memory_bank = self.encoder(src, lengths)
         enc_state = \
-            self.decoder.target_decoder.init_decoder_state(src, memory_bank, enc_final)
+            self.target_decoder.decoder.init_decoder_state(src, memory_bank, enc_final)
 
         # MLE Optimize.
         # Support default OpenNMT interface
         if not train_mode:
             decoder_outputs, dec_state, attns = \
-                self.target_critic(tgt, memory_bank,
+                self.target_decoder(tgt, memory_bank,
                                   enc_state if dec_state is None
                                   else dec_state,
                                   memory_lengths=lengths)

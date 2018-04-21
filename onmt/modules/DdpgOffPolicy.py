@@ -84,7 +84,7 @@ class ActorProjector(nn.Module):
         :return: tensor of size (b, *, action_size)
         """
         for i in range(self.num_layers):
-            input = self.res_layer[i](input)
+            input = self.res_layers[i](input)
         output = self.projector(input)
         output = self.layer_norm(output)
 

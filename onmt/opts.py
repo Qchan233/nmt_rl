@@ -72,25 +72,6 @@ def model_opts(parser):
     group.add_argument('-cnn_kernel_width', type=int, default=3,
                        help="""Size of windows in the cnn, the kernel_size is
                        (cnn_kernel_width, 1) in conv layer""")
-    # RL setting
-
-    group.add_argument('-RL_algorithm', type=str, default=None,
-                       choices=[None, 'ddpg_off_policy'],
-                       help="""Type of RL algorithm""")
-    group.add_argument('-alpha_divergence', type=float, default=.0,
-                       help="""if 0.0, use only MLE to optimize, if 1.0, use only RL method""")
-    group.add_argument('-action_size', type=int, default=50,
-                       help='Size of continuous action for RL model')
-    group.add_argument('-action_emb_layers', type=int, default=2,
-                       help="""Number of action embedding layers""")
-    group.add_argument('-lr_actor', type=float, default=2e-6,
-                       help="""Learning rate of actor net""")
-    group.add_argument('-lr_critic', type=float, default=2e-6,
-                       help="""Learning rate of critic net""")
-    group.add_argument('-query_generator', type=bool, default=True,
-                       help='Using a query generator')
-    group.add_argument('-gamma', type=float, default=0.5,
-                       help="""Discount factor for value function""")
 
     group.add_argument('-input_feed', type=int, default=1,
                        help="""Feed the context vector at each time step as
@@ -116,6 +97,31 @@ def model_opts(parser):
                        choices=['source', 'target', 'both'],
                        help="""Type of context gate to use.
                        Do not select for no context gate.""")
+
+
+    # RL setting
+    group = parser.add_argument_group('RL_Model')
+    group.add_argument('-RL_algorithm', type=str, default='ddpg_off_policy',
+                       choices=[None, 'ddpg_off_policy'],
+                       help="""Type of RL algorithm""")
+
+    group.add_argument('-alpha_divergence', type=float, default=1.0,
+                       help="""if 0.0, use only MLE to optimize, if 1.0, use only RL method""")
+    group.add_argument('-gamma', type=float, default=0.5,
+                       help="""Discount factor for value function""")
+
+    group.add_argument('-action_size', type=int, default=50,
+                       help='Size of continuous action for RL model')
+    group.add_argument('-action_emb_layers', type=int, default=2,
+                       help="""Number of action embedding layers""")
+    group.add_argument('-lr_actor', type=float, default=2e-6,
+                       help="""Learning rate of actor net""")
+    group.add_argument('-lr_critic', type=float, default=2e-6,
+                       help="""Learning rate of critic net""")
+
+    group.add_argument('-query_generator', type=bool, default=True,
+                       help='Using a query generator')
+
 
     # Attention options
     group = parser.add_argument_group('Model- Attention')
