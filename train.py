@@ -565,9 +565,6 @@ def show_optimizer_state(optim):
         print("optim.optimizer.state_dict()['param_groups'] element: " + str(
             element))
 
-
-
-
 def main():
     # Load checkpoint if we resume from a previous training.
     if opt.train_from:
@@ -618,8 +615,7 @@ def main():
         optim_actor, optim_critic = build_RL_optim(model, checkpoint)
 
         # Do training
-        #TODO
-
+        #TODO:
     # If using tensorboard for logging, close the writer after training.
     if opt.tensorboard:
         writer.close()
