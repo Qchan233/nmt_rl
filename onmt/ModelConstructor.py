@@ -324,8 +324,8 @@ def make_RL_model(model_opt, fields, gpu, checkpoint=None):
         if hasattr(model.encoder, 'embeddings'):
             model.encoder.embeddings.load_pretrained_vectors(
                     model_opt.pre_word_vecs_enc, model_opt.fix_word_vecs_enc)
-        if hasattr(model.decoder, 'embeddings'):
-            model.decoder.embeddings.load_pretrained_vectors(
+        if hasattr(model.dec_embed_layer, 'embeddings'):
+            model.dec_embed_layer.load_pretrained_vectors(
                     model_opt.pre_word_vecs_dec, model_opt.fix_word_vecs_dec)
 
     # Add generator to model (this registers it as parameter of model).

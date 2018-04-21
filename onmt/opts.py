@@ -79,7 +79,7 @@ def model_opts(parser):
                        help="""Type of RL algorithm""")
     group.add_argument('-alpha_divergence', type=float, default=.0,
                        help="""if 0.0, use only MLE to optimize, if 1.0, use only RL method""")
-    group.add_argument('-action_size', type=int, default=500,
+    group.add_argument('-action_size', type=int, default=50,
                        help='Size of continuous action for RL model')
     group.add_argument('-action_emb_layers', type=int, default=2,
                        help="""Number of action embedding layers""")
@@ -87,7 +87,7 @@ def model_opts(parser):
                        help="""Learning rate of actor net""")
     group.add_argument('-lr_critic', type=float, default=2e-6,
                        help="""Learning rate of critic net""")
-    group.add_argument('-query_generator', type=bool, default=False,
+    group.add_argument('-query_generator', type=bool, default=True,
                        help='Using a query generator')
     group.add_argument('-gamma', type=float, default=0.5,
                        help="""Discount factor for value function""")

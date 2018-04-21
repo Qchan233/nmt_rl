@@ -560,19 +560,22 @@ class RL_Model(nn.Module):
 
         super(RL_Model, self).__init__()
         self.generator = generator
-        self.encoder = onmt.ModelConstructor.make_encoder(model_opt, enc_embed_layer)
+        self.enc_embed_layer = enc_embed_layer
+        self.dec_embed_layer = dec_embed_layer
+        self.encoder = onmt.ModelConstructor.make_encoder(model_opt,
+                                                          self.enc_embed_layer)
         self.target_decoder = onmt.modules.DdpgOffPolicy.DDPG_OffPolicyDecoderLayer(model_opt,
-                                                      dec_embed_layer,
-                                                      self.generator)
+                                                                                    self.dec_embed_layer,
+                                                                                    self.generator)
         self.optim_decoder = onmt.modules.DdpgOffPolicy.DDPG_OffPolicyDecoderLayer(model_opt,
-                                                      dec_embed_layer,
-                                                      self.generator)
+                                                                                   self.dec_embed_layer,
+                                                                                   self.generator)
         self.target_critic = onmt.modules.DdpgOffPolicy.ddpg_critic_layer(model_opt,
-                                               dec_embed_layer,
-                                               enc_embed_layer)
+                                                                          self.dec_embed_layer,
+                                                                          self.enc_embed_layer)
         self.optim_critic = onmt.modules.DdpgOffPolicy.ddpg_critic_layer(model_opt,
-                                              dec_embed_layer,
-                                              enc_embed_layer)
+                                                                         self.dec_embed_layer,
+                                                                         self.enc_embed_layer)
         self.alpha_divergence = model_opt.alpha_divergence
         self.gamma = model_opt.gamma
     def forward(self, src, tgt, lengths, dec_state=None, train_mode=False):

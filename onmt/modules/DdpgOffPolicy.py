@@ -180,13 +180,13 @@ class ddpg_critic_layer(nn.Module):
         hidden_size = 2048
         self.tgt_encoder = TransformerEncoder(2,
                                               hidden_size,
-                                              model_opt.drop_out,
+                                              model_opt.dropout,
                                               dec_embedding_layer)
         self.hyp_decoder = TransformerDecoderWithStates(2,
                                                         hidden_size,
                                                         model_opt.global_attention,
                                                         model_opt.copy_attn,
-                                                        model_opt.drop_out,
+                                                        model_opt.dropout,
                                                         enc_embedding_layer)
         self.embed_dim = model_opt.tgt_word_vec_size
         self.rnn_size = model_opt.rnn_size
@@ -195,7 +195,7 @@ class ddpg_critic_layer(nn.Module):
         self.hidden_size = hidden_size
         self.action_state_projecter = nn.Linear(self.rnn_size + self.action_size, self.embed_dim)
         self.res_layers_nums = 2
-        self.res_layers = nn.ModuleList([MLPResBlock(hidden_size, dropout=model_opt.drop_out)
+        self.res_layers = nn.ModuleList([MLPResBlock(hidden_size, dropout=model_opt.dropout)
                                          for _ in range(self.res_layers_nums)])
         self.value_projector = nn.Linear(hidden_size, 1)
 
@@ -230,7 +230,6 @@ class MLPResBlock(nn.Module):
 
         super(MLPResBlock, self).__init__()
         self.linear_layer = nn.Linear(hidden_size, hidden_size)
-        self.relu = nn.Relu(inplace=True)
         self.drop = nn.Dropout(dropout)
         self.layer_norm = onmt.modules.LayerNorm(hidden_size)
 
@@ -240,7 +239,7 @@ class MLPResBlock(nn.Module):
         :return: output: tensor of size the same as input
         """
         x = self.linear_layer(input)
-        x = self.relu(x)
+        x = F.relu(x)
         output = input + self.layer_norm(x)
         output = self.drop(output)
 
