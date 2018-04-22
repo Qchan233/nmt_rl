@@ -691,7 +691,7 @@ def main():
 
         # Build RL optimizer
         optim_actor, optim_critic = build_RL_optim(model, checkpoint)
-
+        
         # Do training
         train_RL_model(model, fields, optim_actor, optim_critic, data_type, model_opt)
     # If using tensorboard for logging, close the writer after training.
