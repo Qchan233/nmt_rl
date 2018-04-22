@@ -218,6 +218,7 @@ def make_loss_compute(model, tgt_vocab, opt, train=True):
         compute = onmt.modules.CopyGeneratorLossCompute(
             model.generator, tgt_vocab, opt.copy_attn_force,
             opt.copy_loss_by_seqlength)
+    
     else:
         compute = onmt.Loss.NMTLossCompute(
             model.generator, tgt_vocab,
@@ -280,7 +281,62 @@ def train_model(model, fields, optim, data_type, model_opt):
         # 5. Drop a checkpoint if needed.
         if epoch >= opt.start_checkpoint_at:
             trainer.drop_checkpoint(model_opt, epoch, fields, valid_stats)
+            
+def train_RL_model(model, fields, optim_actor, optim_critic, data_type, model_opt)
+    train_actor_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
+    train_critic_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
+    
+    valid_loss = make_loss_compute(model, fields["tgt"].vocab, opt,
+                                   train=False)
 
+    norm_method = opt.normalization
+    grad_accum_count = opt.accum_count
+
+    trainer = onmt.RL_Trainer(model, train_actor_loss, train_critic_loss, valid_loss, optim_critic, optim_actor , data_type,
+                           norm_method, grad_accum_count)
+
+    print('\nStart training...')
+    print(' * number of epochs: %d, starting from Epoch %d' %
+          (opt.epochs + 1 - opt.start_epoch, opt.start_epoch))
+    print(' * batch size: %d' % opt.batch_size)
+
+    for epoch in range(opt.start_epoch, opt.epochs + 1):
+        print('')
+
+        # 1. Train for one epoch on the training set.
+        train_iter = make_dataset_iter(lazily_load_dataset("train"),
+                                       fields, opt)
+        train_stats = trainer.train(train_iter, epoch, report_func)
+        print('Train perplexity: %g' % train_stats.ppl())
+        print('Train accuracy: %g' % train_stats.accuracy())
+
+        # 2. Validate on the validation set.
+        valid_iter = make_dataset_iter(lazily_load_dataset("valid"),
+                                       fields, opt,
+                                       is_train=False)
+        valid_stats = trainer.validate(valid_iter)
+        print('Validation perplexity: %g' % valid_stats.ppl())
+        print('Validation accuracy: %g' % valid_stats.accuracy())
+
+        # 3. Log to remote server.
+        if opt.exp_host:
+            train_stats.log("train_actor", experiment, optim_actor.lr)
+            train_stats.log("train_critic", experiment, optim_critc.lr)
+            valid_stats.log("valid", experiment, optim_actor.lr)
+        if opt.tensorboard:
+            train_stats.log_tensorboard("train_actor", writer, optim_actor.lr, epoch)
+            train_stats.log_tensorboard("train_critic", writer, optim_critic.lr, epoch)
+            train_stats.log_tensorboard("valid", writer, optim_actor.lr, epoch)
+
+        # 4. Update the learning rate
+        trainer.epoch_step(valid_stats.ppl(), epoch)
+
+        # 5. Drop a checkpoint if needed.
+        if epoch >= opt.start_checkpoint_at:
+            trainer.drop_checkpoint(model_opt, epoch, fields, valid_stats)
+
+
+            
 
 def check_save_model_path():
     save_model_path = os.path.abspath(opt.save_model)
@@ -601,7 +657,8 @@ def main():
 
         # Do training.
         train_model(model, fields, optim, data_type, model_opt)
-
+    if opt.alpha_divergence == 0.0
+        
     else:
         # TODO: Not support alpha_divergence yet.
         assert opt.alpha_divergence == 1.0
@@ -615,7 +672,7 @@ def main():
         optim_actor, optim_critic = build_RL_optim(model, checkpoint)
 
         # Do training
-        #TODO:
+        train_RL_model(model, fields, optim_actor, optim_critic, data_type, model_opt)
     # If using tensorboard for logging, close the writer after training.
     if opt.tensorboard:
         writer.close()
