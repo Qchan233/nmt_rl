@@ -229,6 +229,27 @@ def make_loss_compute(model, tgt_vocab, opt, train=True):
 
     return compute
 
+def make_actor_loss_compute(model, tgt_vocab, opt, train=True):
+    """
+    This returns user-defined LossCompute object, which is used to
+    compute loss in train/validate process. You can implement your
+    own *LossCompute class, by subclassing LossComputeBase.
+    """
+    if opt.copy_attn:
+        compute = onmt.modules.CopyGeneratorLossCompute(
+            model.generator, tgt_vocab, opt.copy_attn_force,
+            opt.copy_loss_by_seqlength)
+    
+    else:
+        compute = onmt.Loss.NMTLossCompute(
+            model.generator, tgt_vocab,
+            label_smoothing=opt.label_smoothing if train else 0.0)
+
+    if use_gpu(opt):
+        compute.cuda()
+
+    return compute
+
 
 def train_model(model, fields, optim, data_type, model_opt):
     train_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
