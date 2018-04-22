@@ -1,4 +1,5 @@
 import argparse
+import numpy as np
 import torch
 from torch.autograd import Variable
 
@@ -35,9 +36,9 @@ if __name__ == '__main__':
     source_l = 3
     bsize = 64
 
-    # not valid test data foe the model
     test_src = Variable(torch.ones(source_l, bsize, 1)).long()
     test_tgt = Variable(torch.ones(source_l, bsize, 1)).long()
+    test_length = torch.ones(bsize).fill_(source_l).long()
     test_length = torch.ones(bsize).fill_(source_l).long()
     batch =  test_src, test_tgt, test_length
 
@@ -45,7 +46,6 @@ if __name__ == '__main__':
     feature_dicts = []
 
     embeddings_enc = make_embeddings(opt, word_dict, feature_dicts)
-
     embeddings_dec = make_embeddings(opt, word_dict, feature_dicts,
                                      for_encoder=False)
 
