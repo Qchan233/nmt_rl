@@ -112,14 +112,22 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
                 state,
                 memory_lengths=None,
                 train_mode=False,
-                noise=False):
+                noise=False,
+                return_states=False):
 
         if not train_mode:
             # Work as a std OpenNMT decoder.
             action, state, attns = self.decoder(tgt, memory_bank, state)
-            if self.using_query:
-                action = self.projector(action)
-            return action, state, attns
+            if return_states:
+                # need states seq
+                states = action
+                if self.using_query:
+                    action = self.projector(action)
+                return action, states, state
+            else:
+                if self.using_query:
+                    action = self.projector(action)
+                return action, state, attns
         else:
             # Decode using a greedy strategy
             hyp_seqs = []
@@ -130,15 +138,11 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
             # states_list.append(state)
 
             # [START_DECODE]
-            inp = tgt[0, :, :].unsqueeze(0) # (1, b, n_feat)
-            # one_hot_seqs.append(inp)
-
-            # _, word_index = inp.max(2)  # (1, b)
-            # hyp_seqs.append(word_index)
+            inp = tgt[0, :, :].unsqueeze(0) # (1, b, 1)
             for i in range(self.max_length):
 
                 action, state, attns = self.decoder(inp, memory_bank, state)
-                states_list.append(state)
+                states_list.append(action)
 
                 if self.using_query:
                     action = self.projector(action) # (1, b, action_dim)
@@ -147,24 +151,24 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
                     action = action + torch.autograd.Variable(torch.randn(action.size()) / 10.0)
                 actions_list.append(action)
 
-                score = self.generator(action) # (1, b, n_feat)
-                _, batch_size, n_feat = score.size()
+                score = self.generator(action) # (1, b, vocab_size)
+                _, batch_size, vocab_size = score.size()
                 _, word_index = score.max(2) # (1, b)
                 hyp_seqs.append(word_index)
 
-                word_one_hot = torch.zeros(batch_size, n_feat).scatter_(1,
-                                                                        word_index.view(-1, 1).data.long(),
-                                                                        1.0) # (b, n_feat)
-                word_one_hot = word_one_hot.long()
-                inp = word_one_hot.view(1, batch_size, -1)
-                one_hot_seqs.append(inp)
+                word_one_hot = torch.zeros(batch_size, vocab_size).scatter_(1,
+                                                                            word_index.view(-1, 1).data.long(),
+                                                                            1.0) # (b, vocab_size)
+                # word_one_hot = word_one_hot.long()
+                one_hot_seqs.append(word_one_hot)
+                inp = word_index.view(1, batch_size, 1).long() # (1, b, vocab_size)
 
-            states = torch.cat(states_list, dim=0) # (seq_len, b, rnn_size)
+            states = torch.cat(tuple(states_list), dim=0) # (seq_len, b, rnn_size)
             actions = torch.cat(actions_list, dim=0) # (seq_len, b, action_dim)
             hyps_index = torch.cat(hyp_seqs, dim=0) # (seq_len, b)
-            hyps_one_hot = torch.cat(one_hot_seqs, dim=0) # (seq_len, b, n_feat)
+            hyps_one_hot = torch.stack(one_hot_seqs, dim=0) # (seq_len, b, vocab_size)
 
-            return states, actions, hyps_index, hyps_one_hot
+            return states, actions, hyps_index, hyps_one_hot, state
 
 class ddpg_critic_layer(nn.Module):
     """
@@ -177,43 +181,40 @@ class ddpg_critic_layer(nn.Module):
     def __init__(self, model_opt, dec_embedding_layer, enc_embedding_layer):
 
         super(ddpg_critic_layer, self).__init__()
-        hidden_size = 2048
-        self.tgt_encoder = TransformerEncoder(2,
-                                              hidden_size,
+        hidden_size = model_opt.rnn_size
+        self.tgt_encoder = TransformerEncoder(model_opt.enc_layers,
+                                              model_opt.rnn_size,
                                               model_opt.dropout,
                                               dec_embedding_layer)
         self.hyp_decoder = TransformerDecoderWithStates(2,
-                                                        hidden_size,
+                                                        model_opt.rnn_size,
                                                         model_opt.global_attention,
                                                         model_opt.copy_attn,
                                                         model_opt.dropout,
                                                         enc_embedding_layer)
-        self.embed_dim = model_opt.tgt_word_vec_size
-        self.rnn_size = model_opt.rnn_size
-        self.action_size = model_opt.action_size
-        self.batch_size = model_opt.batch_size
-        self.hidden_size = hidden_size
-        self.action_state_projecter = nn.Linear(self.rnn_size + self.action_size, self.embed_dim)
+        embed_dim = model_opt.tgt_word_vec_size
+        self.action_state_projecter = nn.Linear(model_opt.rnn_size + model_opt.action_size,
+                                                embed_dim)
         self.res_layers_nums = 2
         self.res_layers = nn.ModuleList([MLPResBlock(hidden_size, dropout=model_opt.dropout)
                                          for _ in range(self.res_layers_nums)])
         self.value_projector = nn.Linear(hidden_size, 1)
 
-    def forward(self, states, tgt, actions, hyps_one_hot):
+    def forward(self, states, tgt, actions, hyp):
         """
         :param states: (seq_len, b, rnn_size)
-        :param tgt: (tgt_seq_len, b, n_feat)
+        :param tgt: (tgt_seq_len, b, 1)
         :param actions: (seq_len, b, action_size)
-        :param hyps_one_hot: (hyp_seq_len, b, n_feat)
+        :param hyp: (hyp_seq_len, b, 1)
         :return: output: the Q(a_t, s_t) for each time step. Tensor of size (seq_len, b, 1)
         """
-        memory_bank, tgt_state, tgt_attns = self.tgt_encoder(tgt)
+        tgt_state, memory_bank = self.tgt_encoder(tgt)
+        tgt_state = self.hyp_decoder.init_decoder_state(tgt, memory_bank, tgt_state)
         query = self.action_state_projecter(torch.cat([states, actions], dim=2)) # (seq_len, b, hidden_size)
-        output, _, _ = self.hyp_decoder(hyps_one_hot,
+        output, _, _ = self.hyp_decoder(hyp,
                                         memory_bank,
                                         tgt_state,
-                                        query,
-                                        memory_lengths=None) # (seq_len, b, hidden_state)
+                                        query) # (seq_len, b, hidden_state)
         for i in range(self.res_layers_nums):
             output = self.res_layers[i](output) # (seq_len, b, hidden_size)
         output = self.value_projector(output) # (seq_len, b, 1)
@@ -221,7 +222,7 @@ class ddpg_critic_layer(nn.Module):
         # Also, bleu will not be larger then 1.
         output = torch.tanh(output)
 
-        raise output
+        return output
 
 
 class MLPResBlock(nn.Module):
