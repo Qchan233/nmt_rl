@@ -229,21 +229,26 @@ def make_loss_compute(model, tgt_vocab, opt, train=True):
 
     return compute
 
-def make_actor_loss_compute(model, tgt_vocab, opt, train=True):
+def make_actor_loss_compute(model, tgt_vocab, src_vocab, train=True):
     """
     This returns user-defined LossCompute object, which is used to
     compute loss in train/validate process. You can implement your
     own *LossCompute class, by subclassing LossComputeBase.
     """
-    if opt.copy_attn:
-        compute = onmt.modules.CopyGeneratorLossCompute(
-            model.generator, tgt_vocab, opt.copy_attn_force,
-            opt.copy_loss_by_seqlength)
-    
-    else:
-        compute = onmt.Loss.NMTLossCompute(
-            model.generator, tgt_vocab,
-            label_smoothing=opt.label_smoothing if train else 0.0)
+    compute = onmt.Loss.DDPGLossComputeActor(tgt_vocab, src_vocab, #length?#)
+
+    if use_gpu(opt):
+        compute.cuda()
+
+    return compute
+
+def make_critic_loss_compute(model, tgt_vocab, opt, train=True):
+    """
+    This returns user-defined LossCompute object, which is used to
+    compute loss in train/validate process. You can implement your
+    own *LossCompute class, by subclassing LossComputeBase.
+    """
+    compute = onmt.Loss.DDPGLossComputeCritic(tgt_vocab, src_vocab, #length?#)
 
     if use_gpu(opt):
         compute.cuda()
@@ -252,8 +257,8 @@ def make_actor_loss_compute(model, tgt_vocab, opt, train=True):
 
 
 def train_model(model, fields, optim, data_type, model_opt):
-    train_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
-    valid_loss = make_loss_compute(model, fields["tgt"].vocab, opt,
+    train_loss = make_loss_compute(model, fields["tgt"].vocab, fiedls["src"], opt)
+    valid_loss = make_loss_compute(model, fields["tgt"].vocab, fiedls["src"], opt,
                                    train=False)
 
     trunc_size = opt.truncated_decoder  # Badly named...
@@ -304,10 +309,10 @@ def train_model(model, fields, optim, data_type, model_opt):
             trainer.drop_checkpoint(model_opt, epoch, fields, valid_stats)
             
 def train_RL_model(model, fields, optim_actor, optim_critic, data_type, model_opt)
-    train_actor_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
-    train_critic_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
+    train_actor_loss = make_actor_loss_compute(model, fields["tgt"].vocab, fields["src"].vocab, opt)
+    train_critic_loss = make_critic_loss_compute(model, fields["tgt"].vocab, fields["src"].vocab, opt)
     
-    valid_loss = make_loss_compute(model, fields["tgt"].vocab, opt,
+    valid_loss = make_critic_loss_compute(model, fields["tgt"].vocab, opt,
                                    train=False)
 
     norm_method = opt.normalization
