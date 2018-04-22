@@ -612,6 +612,7 @@ class RL_Model(nn.Module):
                                                                          memory_lengths=lengths,
                                                                          train_mode=True,
                                                                          noise=True)
+
             # y_t = r_t + gamma * Q_{t+1} (s_{t+1}, \mu ' _ (s_{t+1}))
             # Compute y_t using target decoder. As the environment is deterministic by action, we can use \
             # optim_hyps_one_hot as tgt ,like teacher force mode, to generator a non-noise sequence.
@@ -624,9 +625,7 @@ class RL_Model(nn.Module):
                                     else dec_state,
                                     memory_lengths=lengths,
                                     return_states=True) # (max_dec_len, b, *)
-
             hyp_score = self.target_decoder.generator(target_actions) # (max_dec_len, b, vocab_size)
-
             max_dec_len, batch_size, vocab_size = hyp_score.size()
             _, hyps_index = hyp_score.max(2) # (max_dec_len, b)
 
@@ -643,6 +642,7 @@ class RL_Model(nn.Module):
                                         hyps_index).view(rewards.size()) # (max_dec_len, b)
             values_zero = torch.autograd.Variable(torch.zeros(1, batch_size)) # values[-1, :]
             values = torch.cat([values[1:, :], values_zero], dim=0) # (max_dec_len, b)
+
             # Compute y_t = r_t + gamma * value_{t+1} (s_{t+1}, \mu ' _ (s_{t+1}))
             ys = rewards.float() + self.gamma * values # (max_dec_len, b)
 
@@ -660,17 +660,17 @@ class RL_Model(nn.Module):
                                    enc_state if dec_state is None
                                    else dec_state,
                                    return_states=True)
-
             optim_score = self.optim_decoder.generator(optim_actions) # (max_dec_len, b, vocab_size)
             _, optim_index = optim_score.max(2)  # (max_dec_len, b)
             optim_index = optim_index.unsqueeze(2)
+
             # Compute Q(s_t, \mu (s_t))
             values_optim = self.optim_critic(optim_states,
                                              tgt,
                                              optim_actions,
                                              optim_index).view(rewards.size()) # (seq, b)
-            # {y_t}, {Q(s_t, a_t)}, {Q(s_t, \mu (s_t))}
 
+            # {y_t}, {Q(s_t, a_t)}, {Q(s_t, \mu (s_t))}
             return ys, values_fit, values_optim
 
 class NMTModel(nn.Module):

@@ -17,12 +17,11 @@ class QueryGenerator(nn.Module):
                  dec_embed_layer,
                  vocab_size):
         super(QueryGenerator, self).__init__()
-        self.action_dim = model_opt.action_size
         self.embed_dim = model_opt.tgt_word_vec_size
         self.vocab_size = vocab_size
         self.batch_size = model_opt.batch_size
         self.dec_embed_layer = dec_embed_layer
-        self.action_to_embed = nn.Linear(self.action_dim, self.embed_dim)
+        self.action_to_embed = nn.Linear(model_opt.action_size, self.embed_dim)
         self.layer_norm = onmt.modules.LayerNorm(self.embed_dim)
         self.atten_layer = MultiHeadedAttention(1, self.embed_dim, 0.1)
 
@@ -114,6 +113,22 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
                 train_mode=False,
                 noise=False,
                 return_states=False):
+        """
+
+        :param tgt: tgt sentence. (seq_len, b, 1)
+        :param memory_bank: encoder states. (seq_len, b, hidden_size)
+        :param state: encoder state object.
+        :param memory_lengths: length of src. (b)
+        :param train_mode: If train and alpha == 1.0, run RL pass.
+        :param noise: Whether add gaussian noise on actions.
+        :param return_states: Whther return states (hidden layer).
+        :return: states: hidden layer. (seq_len, b, hidden_size)
+                 actions: (seq_len, b, action_dim) if query generator, otherwise the same as states
+                 hyps_index: (seq_len, b)
+                 hyps_one_hot: (seq_len, b, vocab_size)
+                 state: a state object.
+
+        """
 
         if not train_mode:
             # Work as a std OpenNMT decoder.
@@ -193,8 +208,14 @@ class ddpg_critic_layer(nn.Module):
                                                         model_opt.dropout,
                                                         enc_embedding_layer)
         embed_dim = model_opt.tgt_word_vec_size
-        self.action_state_projecter = nn.Linear(model_opt.rnn_size + model_opt.action_size,
-                                                embed_dim)
+
+        self.query_generator = model_opt.query_generator
+        if self.query_generator:
+            self.action_state_projecter = nn.Linear(model_opt.rnn_size + model_opt.action_size,
+                                                    embed_dim)
+        else:
+            self.action_state_projecter = nn.Linear(model_opt.rnn_size, embed_dim)
+
         self.res_layers_nums = 2
         self.res_layers = nn.ModuleList([MLPResBlock(hidden_size, dropout=model_opt.dropout)
                                          for _ in range(self.res_layers_nums)])
@@ -208,16 +229,24 @@ class ddpg_critic_layer(nn.Module):
         :param hyp: (hyp_seq_len, b, 1)
         :return: output: the Q(a_t, s_t) for each time step. Tensor of size (seq_len, b, 1)
         """
+
         tgt_state, memory_bank = self.tgt_encoder(tgt)
         tgt_state = self.hyp_decoder.init_decoder_state(tgt, memory_bank, tgt_state)
-        query = self.action_state_projecter(torch.cat([states, actions], dim=2)) # (seq_len, b, hidden_size)
+
+        if self.query_generator:
+            query = self.action_state_projecter(torch.cat([states, actions], dim=2)) # (seq_len, b, hidden_size)
+        else:
+            query = self.action_state_projecter(states)
+
         output, _, _ = self.hyp_decoder(hyp,
                                         memory_bank,
                                         tgt_state,
                                         query) # (seq_len, b, hidden_state)
+
         for i in range(self.res_layers_nums):
             output = self.res_layers[i](output) # (seq_len, b, hidden_size)
         output = self.value_projector(output) # (seq_len, b, 1)
+
         # BLEU will be lower after generating meaningless tokens, so Q can be neg.
         # Also, bleu will not be larger then 1.
         output = torch.tanh(output)
