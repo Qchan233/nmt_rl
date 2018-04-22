@@ -235,7 +235,7 @@ def make_actor_loss_compute(model, tgt_vocab, src_vocab, train=True):
     compute loss in train/validate process. You can implement your
     own *LossCompute class, by subclassing LossComputeBase.
     """
-    compute = onmt.Loss.DDPGLossComputeActor(tgt_vocab, src_vocab, #length?#)
+    compute = onmt.Loss.DDPGLossComputeActor(ys, values_fit, values_optim)
 
     if use_gpu(opt):
         compute.cuda()
@@ -309,7 +309,8 @@ def train_model(model, fields, optim, data_type, model_opt):
             trainer.drop_checkpoint(model_opt, epoch, fields, valid_stats)
             
 def train_RL_model(model, fields, optim_actor, optim_critic, data_type, model_opt)
-    train_actor_loss = make_actor_loss_compute(model, fields["tgt"].vocab, fields["src"].vocab, opt)
+    ys, values_fit, values_optim = model.forward(fields["tgt"].vocab, fields["src"].vocab)
+    train_actor_loss = make_actor_loss_compute(model,  opt)
     train_critic_loss = make_critic_loss_compute(model, fields["tgt"].vocab, fields["src"].vocab, opt)
     
     valid_loss = make_critic_loss_compute(model, fields["tgt"].vocab, opt,
