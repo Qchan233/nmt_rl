@@ -24,7 +24,7 @@ opt = parser.parse_known_args(['-data', 'dummy',
                                '-gamma', '0.5',
                                '-action_size', '10',
                                '-action_emb_layers', '2',
-                               '-query_generator', 'True',
+                               '-query_generator', 'False',
                                '-max_length', '100'])[0]
 
 if __name__ == '__main__':
