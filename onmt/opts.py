@@ -50,12 +50,12 @@ def model_opts(parser):
                        the system to incorporate non-text inputs.
                        Options are [text|img|audio].""")
 
-    group.add_argument('-encoder_type', type=str, default='transformer',
+    group.add_argument('-encoder_type', type=str, default='rnn',
                        choices=['rnn', 'brnn', 'mean', 'transformer', 'cnn'],
                        help="""Type of encoder layer to use. Non-RNN layers
                        are experimental. Options are
                        [rnn|brnn|mean|transformer|cnn].""")
-    group.add_argument('-decoder_type', type=str, default='transformer',
+    group.add_argument('-decoder_type', type=str, default='rnn',
                        choices=['rnn', 'transformer', 'cnn'],
                        help="""Type of decoder layer to use. Non-RNN layers
                        are experimental. Options are
@@ -105,7 +105,7 @@ def model_opts(parser):
                        choices=[None, 'ddpg_off_policy'],
                        help="""Type of RL algorithm""")
 
-    group.add_argument('-alpha_divergence', type=float, default=1.0,
+    group.add_argument('-alpha_divergence', type=float, default=0.0,
                        help="""if 0.0, use only MLE to optimize, if 1.0, use only RL method""")
     group.add_argument('-gamma', type=float, default=0.5,
                        help="""Discount factor for value function""")
@@ -357,7 +357,7 @@ def train_opts(parser):
                        help="""Starting learning rate.
                        Recommended settings: sgd = 1, adagrad = 0.1,
                        adadelta = 1, adam = 0.001""")
-    group.add_argument('-learning_rate_decay', type=float, default=0.5,
+    group.add_argument('-learning_rate_decay', type=float, default=0.9,
                        help="""If update_learning_rate, decay learning rate by
                        this much if (i) perplexity does not decrease on the
                        validation set or (ii) epoch has gone past
@@ -435,7 +435,7 @@ def translate_opts(parser):
                        help='Beam size')
     group.add_argument('-min_length', type=int, default=0,
                        help='Minimum prediction length')
-    group.add_argument('-max_length', type=int, default=100,
+    group.add_argument('-max_length', type=int, default=30,
                        help='Maximum prediction length.')
     group.add_argument('-max_sent_length', action=DeprecateAction,
                        help="Deprecated, use `-max_length` instead")

@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from MultiHeadedAttn import MultiHeadedAttention
 import onmt
 from onmt.Utils import aeq
-from onmt.modules.Transformer import TransformerEncoder, TransformerDecoder, TransformerDecoderState, TransformerDecoderLayer
+from onmt.modules.Transformer import TransformerEncoder, TransformerDecoderState, TransformerDecoderLayer
 
 class QueryGenerator(nn.Module):
     """
@@ -21,32 +21,23 @@ class QueryGenerator(nn.Module):
         self.vocab_size = vocab_size
         self.batch_size = model_opt.batch_size
         self.dec_embed_layer = dec_embed_layer
+        self.action_size = model_opt.action_size
         self.action_to_embed = nn.Linear(model_opt.action_size, self.embed_dim)
         self.layer_norm = onmt.modules.LayerNorm(self.embed_dim)
-        self.atten_layer = MultiHeadedAttention(1, self.embed_dim, 0.1)
+        self.logsoftmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, action):
         """
         :param action: tensor of size (seq_len, batch, action_dim)
         :return: output: tensor of size (seq_len, batch, vocab_size)
         """
+        action_embeded = self.action_to_embed(action) # (seq_len, batch, embed_dim)
+        action_embeded = self.layer_norm(action_embeded)
 
-        action_embeded = self.action_to_embed(action)
-        action_embeded = action_embeded.view(self.batch_size, -1, self.embed_dim)
-        action_embeded = self.layer_norm(action_embeded) # (b, seq_len, embed_dim)
-
-        # vocab = torch.arange(end = self.vocab_size).long() # (vocab_size)
-        #
-        # vocab = vocab.expand(self.batch_size, self.vocab_size) # (b, vocab_size)
-        # word_matrix = self.dec_embed_layer(vocab) # (b, vocab_size, embed_dim)
-        emb_weight = self.dec_embed_layer.word_lut.weight # (vocab_size, embed_dim)
-        word_matrix = emb_weight.expand(self.batch_size, self.vocab_size, self.embed_dim) # (b, vocab_size, embed_dim)
-        #TODO: improve the use of memory
-        _, attn = self.atten_layer(action_embeded, action_embeded, word_matrix)
-        # tensor of size (batch, seq_len, vocab_size)
-        output = torch.log(attn)
-        # Work as LogSoftmax after a query in the std generator
-        output = output.view(-1, self.batch_size, self.vocab_size)
+        word_matrix = self.dec_embed_layer.word_lut.weight # (vocab_size, embed_dim)
+        attn = F.linear(action_embeded, word_matrix)
+        attn = attn / 10
+        output = self.logsoftmax(attn)
         # tensor of size (seq_len, batch, vocab_size)
 
         return output
@@ -101,7 +92,7 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
         self.using_query = model_opt.query_generator
         self.decoder = onmt.ModelConstructor.make_decoder(model_opt, embeddings)
         self.generator = generator
-        self.max_length = 100
+        self.max_length = 30
         if self.using_query:
             assert isinstance(self.generator, QueryGenerator)
             self.projector = ActorProjector(model_opt)
@@ -243,8 +234,8 @@ class ddpg_critic_layer(nn.Module):
                                         tgt_state,
                                         query) # (seq_len, b, hidden_state)
 
-        for i in range(self.res_layers_nums):
-            output = self.res_layers[i](output) # (seq_len, b, hidden_size)
+        # for i in range(self.res_layers_nums):
+        #     output = self.res_layers[i](output) # (seq_len, b, hidden_size)
         output = self.value_projector(output) # (seq_len, b, 1)
 
         # BLEU will be lower after generating meaningless tokens, so Q can be neg.

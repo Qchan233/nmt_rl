@@ -262,6 +262,7 @@ def make_RL_model(model_opt, fields, gpu, checkpoint=None):
     feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
     src_embeddings = make_embeddings(model_opt, src_dict,
                                      feature_dicts)
+    encoder = make_encoder(model_opt, src_embeddings)
 
     # Make decoder.
     tgt_dict = fields["tgt"].vocab
@@ -290,7 +291,7 @@ def make_RL_model(model_opt, fields, gpu, checkpoint=None):
             generator = CopyGenerator(model_opt.rnn_size,
                                       fields["tgt"].vocab)
     else:
-        generator = DdpgOffPolicy.QueryGenerator(model_opt,
+        generator = onmt.modules.DdpgOffPolicy.QueryGenerator(model_opt,
                                                  tgt_embeddings,
                                                  len(fields["tgt"].vocab))
 
