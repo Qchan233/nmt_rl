@@ -159,8 +159,6 @@ class DDPGLossComputeCritic(LossComputeBase):
 
     def __init__(self, normalization="sents", ys, values_fit, values_optim):
 
-        super(DDPGLossCompute, self).__init__(generator, tgt_vocab)
-
         self.criterion = nn.MSELoss(size_average=True)
         self.ys = ys
         self.values_optim = values_optim
@@ -179,8 +177,6 @@ class DDPGLossComputeActor(LossComputeBase):
     """
 
     def __init__(self, normalization="sents", ys, values_fit, values_optim):
-
-        super(DDPGLossCompute, self).__init__(generator, tgt_vocab)
 
         self.values_optim = values_optim
         self.values_fit = values_fit
