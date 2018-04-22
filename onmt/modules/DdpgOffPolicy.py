@@ -163,7 +163,7 @@ class DDPG_OffPolicyDecoderLayer(nn.Module):
                 one_hot_seqs.append(word_one_hot)
                 inp = word_index.view(1, batch_size, 1).long() # (1, b, vocab_size)
 
-            states = torch.cat(tuple(states_list), dim=0) # (seq_len, b, rnn_size)
+            states = torch.cat(states_list, dim=0) # (seq_len, b, rnn_size)
             actions = torch.cat(actions_list, dim=0) # (seq_len, b, action_dim)
             hyps_index = torch.cat(hyp_seqs, dim=0) # (seq_len, b)
             hyps_one_hot = torch.stack(one_hot_seqs, dim=0) # (seq_len, b, vocab_size)
