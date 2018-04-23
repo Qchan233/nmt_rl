@@ -687,7 +687,7 @@ def main():
         optim = build_optim(model, checkpoint)
 
         # Do training.
-        train_RK_model_MLE(model, fields, optim, data_type, model_opt)
+        train_model(model, fields, optim, data_type, model_opt)
 
     else:
         # TODO: Not support alpha_divergence yet.
