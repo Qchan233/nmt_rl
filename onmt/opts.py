@@ -110,7 +110,7 @@ def model_opts(parser):
     group.add_argument('-gamma', type=float, default=0.5,
                        help="""Discount factor for value function""")
 
-    group.add_argument('-action_size', type=int, default=50,
+    group.add_argument('-action_size', type=int, default=128,
                        help='Size of continuous action for RL model')
     group.add_argument('-action_emb_layers', type=int, default=2,
                        help="""Number of action embedding layers""")
@@ -322,7 +322,7 @@ def train_opts(parser):
                        help="""If the norm of the gradient vector exceeds this,
                        renormalize it to have the norm equal to
                        max_grad_norm""")
-    group.add_argument('-dropout', type=float, default=0.3,
+    group.add_argument('-dropout', type=float, default=.0,
                        help="Dropout probability; applied in LSTM stacks.")
     group.add_argument('-truncated_decoder', type=int, default=0,
                        help="""Truncated bptt.""")
@@ -357,7 +357,7 @@ def train_opts(parser):
                        help="""Starting learning rate.
                        Recommended settings: sgd = 1, adagrad = 0.1,
                        adadelta = 1, adam = 0.001""")
-    group.add_argument('-learning_rate_decay', type=float, default=0.9,
+    group.add_argument('-learning_rate_decay', type=float, default=0.99,
                        help="""If update_learning_rate, decay learning rate by
                        this much if (i) perplexity does not decrease on the
                        validation set or (ii) epoch has gone past
