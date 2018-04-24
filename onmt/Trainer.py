@@ -335,21 +335,20 @@ class RL_Trainer(object):
                training loss computation
             optim(:obj:`onmt.Optim.Optim`):
                the optimizer responsible for update
-            trunc_size(int): length of truncated back propagation through time
-            shard_size(int): compute loss in shards of this size for efficiency
             data_type(string): type of the source input: [text|img|audio]
             norm_method(string): normalization methods: [sents|tokens]
             grad_accum_count(int): accumulate gradients this many times.
     """
 
-    def __init__(self, model, train_actor_loss, train_critic_loss, valid_loss, optim,
+    def __init__(self, model, train_actor_loss, train_critic_loss, valid_loss, optim_critic, optim_actor,
                  data_type='text',
                  norm_method="sents", grad_accum_count=1):
         # Basic attributes.
         self.model = model
         self.train_loss = train_loss
         self.valid_loss = valid_loss
-        self.optim = optim
+        self.optim_actor = optim_actor
+        self.optim_critic = optim_critic
         self.data_type = data_type
         self.norm_method = norm_method
         self.grad_accum_count = grad_accum_count
