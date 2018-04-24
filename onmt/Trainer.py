@@ -345,7 +345,7 @@ class RL_Trainer(object):
                  norm_method="sents", grad_accum_count=1):
         # Basic attributes.
         self.model = model
-        self.train_loss = train_loss
+        self.actor_loss = actor_loss
         self.valid_loss = valid_loss
         self.optim_actor = optim_actor
         self.optim_critic = optim_critic
@@ -528,20 +528,14 @@ class RL_Trainer(object):
                 # 1. Create truncated target.
                 tgt = tgt_outer[j: j + trunc_size]
 
-                # 2. F-prop all but generator.
-                if self.grad_accum_count == 1:
-                    self.model.zero_grad()
-                outputs, attns, dec_state = \
-                    self.model(src, tgt, src_lengths, dec_state)
 
                 # 3. Compute loss in shards for memory efficiency.
-                batch_stats = self.train_loss.sharded_compute_loss(
-                        batch, outputs, attns, j,
-                        trunc_size, self.shard_size, normalization)
+                batch_stats = self.train_loss._compute_loss()
 
                 # 4. Update the parameters and statistics.
                 if self.grad_accum_count == 1:
-                    self.optim.step()
+                    self.optim_critic.step()
+                    self.optim_actor.step()
                 total_stats.update(batch_stats)
                 report_stats.update(batch_stats)
 
@@ -551,4 +545,4 @@ class RL_Trainer(object):
 
         if self.grad_accum_count > 1:
             self.optim_critic.step()
-            self.optim_actor.step
+            self.optim_actor.step()
