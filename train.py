@@ -248,7 +248,7 @@ def make_critic_loss_compute(ys, values_fit, values_optim, train=True):
     compute loss in train/validate process. You can implement your
     own *LossCompute class, by subclassing LossComputeBase.
     """
-    compute = onmt.Loss.DDPGLossComputeCritic(tgt_vocab, src_vocab, #length?#)
+    compute = onmt.Loss.DDPGLossComputeCritic(ys, values_fit, values_optim)
 
     if use_gpu(opt):
         compute.cuda()
