@@ -1,2 +1,2 @@
 # nmt_rl
-The code is based on OpenNMT-py.
+My seq2seq RL framework based on OpenNMT-py.
