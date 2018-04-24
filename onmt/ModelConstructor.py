@@ -128,8 +128,8 @@ def load_test_model(opt, dummy_opt):
         model = make_base_model(model_opt, fields,
                                 use_gpu(opt), checkpoint)
     else:
-        assert opt.alpha_divergence == 0.0
-        model = make_RL_model(model_opt, opt, fields, checkpoint)
+        model = make_RL_model(model_opt, fields,
+                              use_gpu(opt), checkpoint)
 
     model.eval()
     model.generator.eval()

@@ -309,7 +309,7 @@ def train_opts(parser):
                         uses more memory.""")
     group.add_argument('-epochs', type=int, default=13,
                        help='Number of training epochs')
-    group.add_argument('-optim', default='sgd',
+    group.add_argument('-optim', default='adadelta',
                        choices=['sgd', 'adagrad', 'adadelta', 'adam',
                                 'sparseadam'],
                        help="""Optimization method.""")
@@ -499,6 +499,8 @@ def translate_opts(parser):
     group.add_argument('-window', default='hamming',
                        help='Window type for spectrogram generation')
 
+    group.add_argument('-RL_algorithm', default=None,
+                       help="""RL algorthm type""")
 
 def add_md_help_argument(parser):
     parser.add_argument('-md', action=MarkdownHelpAction,

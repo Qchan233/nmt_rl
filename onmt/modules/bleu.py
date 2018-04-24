@@ -189,6 +189,7 @@ def chen_and_cherry(references, hypothesis, p_n, hyp_len,
 def sentence_bleu_nbest(reference, hypotheses, weights=(0.25, 0.25, 0.25, 0.25),
                         smoothing=0, epsilon=0.1, alpha=5, k=5):
     """
+    TODO: support dynamic length
     :param reference: a list of words, like ['hallo' , ',', 'world']
     :param hypotheses: a list of words, like ['hallo' , ',', 'world']
     :return: a float
