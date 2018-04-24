@@ -310,11 +310,10 @@ def train_model(model, fields, optim, data_type, model_opt):
             
 def train_RL_model(model, fields, optim_actor, optim_critic, data_type, model_opt)
     ys, values_fit, values_optim = model.forward(fields["tgt"].vocab, fields["src"].vocab)
-    train_actor_loss = make_actor_loss_compute(model,  opt)
-    train_critic_loss = make_critic_loss_compute(model, fields["tgt"].vocab, fields["src"].vocab, opt)
+    train_actor_loss = make_actor_loss_compute(ys, values_fit, values_optim, train=True)
+    train_critic_loss = make_critic_loss_compute(ys, values_fit, values_optim, train=True)
     
-    valid_loss = make_critic_loss_compute(model, fields["tgt"].vocab, opt,
-                                   train=False)
+    valid_loss = make_critic_loss_compute(ys, values_fit, values_optim, train=False)
 
     norm_method = opt.normalization
     grad_accum_count = opt.accum_count
