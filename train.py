@@ -229,7 +229,7 @@ def make_loss_compute(model, tgt_vocab, opt, train=True):
 
     return compute
 
-def make_actor_loss_compute(model, tgt_vocab, src_vocab, train=True):
+def make_actor_loss_compute(ys, values_fit, values_optim, train=True):
     """
     This returns user-defined LossCompute object, which is used to
     compute loss in train/validate process. You can implement your
@@ -242,7 +242,7 @@ def make_actor_loss_compute(model, tgt_vocab, src_vocab, train=True):
 
     return compute
 
-def make_critic_loss_compute(model, tgt_vocab, opt, train=True):
+def make_critic_loss_compute(ys, values_fit, values_optim, train=True):
     """
     This returns user-defined LossCompute object, which is used to
     compute loss in train/validate process. You can implement your
