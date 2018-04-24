@@ -61,5 +61,29 @@ if __name__ == '__main__':
                                          test_tgt,
                                          test_length,
                                          train_mode=True)
+    
+    train_critic_loss = onmt.Loss.DDPGLossComputeCritic(ys, values_fit, values_optim)
+
+    if use_gpu(opt):
+        train_critic_loss.cuda()
+    
+    train_actor_loss = onmt.Loss.DDPGLossComputeActor(ys, values_fit, values_optim)
+
+    if use_gpu(opt):
+        train_actor_loss.cuda()
+    
+    valid_loss = make_critic_loss_compute(model, fields["tgt"].vocab, opt,
+                                   train=False)
+    if use_gpu(opt):
+        valid_loss.cuda()
+        
+    norm_method = opt.normalization
+    grad_accum_count = opt.accum_count
+    trainer = onmt.RL_Trainer(model, train_actor_loss, train_critic_loss, valid_loss, optim_critic, optim_actor , data_type,
+norm_method, grad_accum_count)
+    loss1 = trainer.actor_loss._compute_loss()
+    loss2 = trainer.critic_loss._compute_loss()
+    loss1.backward()
+    loss2.backward()
     outputsize = torch.zeros(source_l - 1, bsize, opt.rnn_size)
     # Make sure that output has the correct size and type

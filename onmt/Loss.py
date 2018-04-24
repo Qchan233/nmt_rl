@@ -153,8 +153,43 @@ class LossComputeBase(nn.Module):
 
     def _unbottle(self, v, batch_size):
         return v.view(-1, batch_size, v.size(1))
+      
+class DDPGLossComputeCritic(LossComputeBase):
 
+    """
 
+    Standard NMT Loss Computation for Critic
+
+    """
+
+    def __init__(self, normalization="sents", ys, values_fit, values_optim):
+
+        self.criterion = nn.MSELoss(size_average=True)
+        self.ys = ys
+        self.values_optim = values_optim
+        self.values_fit = values_fit
+        
+    def _compute_loss(self):
+        loss = self.criterion(self.ys, self.values_fit)
+        return loss
+      
+class DDPGLossComputeActor(LossComputeBase):
+
+    """
+
+    Standard NMT Loss Computation for actor
+
+    """
+
+    def __init__(self, normalization="sents", ys, values_fit, values_optim):
+
+        self.values_optim = values_optim
+        self.values_fit = values_fit
+        
+    def _compute_loss(self):
+        loss = -torch.mean(values_optim)
+        return loss
+      
 class NMTLossCompute(LossComputeBase):
     """
     Standard NMT Loss Computation.
