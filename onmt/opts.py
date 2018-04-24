@@ -67,7 +67,7 @@ def model_opts(parser):
                        help='Number of layers in the encoder')
     group.add_argument('-dec_layers', type=int, default=2,
                        help='Number of layers in the decoder')
-    group.add_argument('-rnn_size', type=int, default=500,
+    group.add_argument('-rnn_size', type=int, default=512,
                        help='Size of rnn hidden states')
     group.add_argument('-cnn_kernel_width', type=int, default=3,
                        help="""Size of windows in the cnn, the kernel_size is
@@ -105,12 +105,12 @@ def model_opts(parser):
                        choices=[None, 'ddpg_off_policy'],
                        help="""Type of RL algorithm""")
 
-    group.add_argument('-alpha_divergence', type=float, default=1.0,
+    group.add_argument('-alpha_divergence', type=float, default=0.0,
                        help="""if 0.0, use only MLE to optimize, if 1.0, use only RL method""")
     group.add_argument('-gamma', type=float, default=0.5,
                        help="""Discount factor for value function""")
 
-    group.add_argument('-action_size', type=int, default=50,
+    group.add_argument('-action_size', type=int, default=128,
                        help='Size of continuous action for RL model')
     group.add_argument('-action_emb_layers', type=int, default=2,
                        help="""Number of action embedding layers""")
@@ -309,7 +309,7 @@ def train_opts(parser):
                         uses more memory.""")
     group.add_argument('-epochs', type=int, default=13,
                        help='Number of training epochs')
-    group.add_argument('-optim', default='sgd',
+    group.add_argument('-optim', default='adadelta',
                        choices=['sgd', 'adagrad', 'adadelta', 'adam',
                                 'sparseadam'],
                        help="""Optimization method.""")
@@ -322,7 +322,7 @@ def train_opts(parser):
                        help="""If the norm of the gradient vector exceeds this,
                        renormalize it to have the norm equal to
                        max_grad_norm""")
-    group.add_argument('-dropout', type=float, default=0.3,
+    group.add_argument('-dropout', type=float, default=.0,
                        help="Dropout probability; applied in LSTM stacks.")
     group.add_argument('-truncated_decoder', type=int, default=0,
                        help="""Truncated bptt.""")
@@ -357,7 +357,7 @@ def train_opts(parser):
                        help="""Starting learning rate.
                        Recommended settings: sgd = 1, adagrad = 0.1,
                        adadelta = 1, adam = 0.001""")
-    group.add_argument('-learning_rate_decay', type=float, default=0.5,
+    group.add_argument('-learning_rate_decay', type=float, default=0.99,
                        help="""If update_learning_rate, decay learning rate by
                        this much if (i) perplexity does not decrease on the
                        validation set or (ii) epoch has gone past
@@ -435,7 +435,7 @@ def translate_opts(parser):
                        help='Beam size')
     group.add_argument('-min_length', type=int, default=0,
                        help='Minimum prediction length')
-    group.add_argument('-max_length', type=int, default=100,
+    group.add_argument('-max_length', type=int, default=30,
                        help='Maximum prediction length.')
     group.add_argument('-max_sent_length', action=DeprecateAction,
                        help="Deprecated, use `-max_length` instead")
@@ -499,6 +499,8 @@ def translate_opts(parser):
     group.add_argument('-window', default='hamming',
                        help='Window type for spectrogram generation')
 
+    group.add_argument('-RL_algorithm', default=None,
+                       help="""RL algorthm type""")
 
 def add_md_help_argument(parser):
     parser.add_argument('-md', action=MarkdownHelpAction,

@@ -282,6 +282,80 @@ def train_model(model, fields, optim, data_type, model_opt):
             trainer.drop_checkpoint(model_opt, epoch, fields, valid_stats)
 
 
+def make_loss_compute_query(model, tgt_vocab, opt, train=True):
+    """
+    This returns user-defined LossCompute object, which is used to
+    compute loss in train/validate process. You can implement your
+    own *LossCompute class, by subclassing LossComputeBase.
+    """
+    if opt.copy_attn:
+        compute = onmt.modules.CopyGeneratorLossCompute(
+            model.generator, tgt_vocab, opt.copy_attn_force,
+            opt.copy_loss_by_seqlength)
+    else:
+        compute = onmt.Loss.NMTQueryLossCompute(
+            model.generator, tgt_vocab,
+            label_smoothing=opt.label_smoothing if train else 0.0)
+
+    if use_gpu(opt):
+        compute.cuda()
+
+    return compute
+
+def train_RK_model_MLE(model, fields, optim, data_type, model_opt):
+    train_loss = make_loss_compute_query(model, fields["tgt"].vocab, opt)
+    valid_loss = make_loss_compute_query(model, fields["tgt"].vocab, opt,
+                                   train=False)
+    # train_loss = make_loss_compute(model, fields["tgt"].vocab, opt)
+    # valid_loss = make_loss_compute(model, fields["tgt"].vocab, opt,train=False)
+
+    trunc_size = opt.truncated_decoder  # Badly named...
+    shard_size = opt.max_generator_batches
+    norm_method = opt.normalization
+    grad_accum_count = opt.accum_count
+
+    trainer = onmt.Trainer(model, train_loss, valid_loss, optim,
+                           trunc_size, shard_size, data_type,
+                           norm_method, grad_accum_count)
+
+    print('\nStart training...')
+    print(' * number of epochs: %d, starting from Epoch %d' %
+          (opt.epochs + 1 - opt.start_epoch, opt.start_epoch))
+    print(' * batch size: %d' % opt.batch_size)
+
+    for epoch in range(opt.start_epoch, opt.epochs + 1):
+        print('')
+
+        # 1. Train for one epoch on the training set.
+        train_iter = make_dataset_iter(lazily_load_dataset("train"),
+                                       fields, opt)
+        train_stats = trainer.train(train_iter, epoch, report_func)
+        print('Train perplexity: %g' % train_stats.ppl())
+        print('Train accuracy: %g' % train_stats.accuracy())
+
+        # 2. Validate on the validation set.
+        valid_iter = make_dataset_iter(lazily_load_dataset("valid"),
+                                       fields, opt,
+                                       is_train=False)
+        valid_stats = trainer.validate(valid_iter)
+        print('Validation perplexity: %g' % valid_stats.ppl())
+        print('Validation accuracy: %g' % valid_stats.accuracy())
+
+        # 3. Log to remote server.
+        if opt.exp_host:
+            train_stats.log("train", experiment, optim.lr)
+            valid_stats.log("valid", experiment, optim.lr)
+        if opt.tensorboard:
+            train_stats.log_tensorboard("train", writer, optim.lr, epoch)
+            train_stats.log_tensorboard("valid", writer, optim.lr, epoch)
+
+        # 4. Update the learning rate
+        trainer.epoch_step(valid_stats.ppl(), epoch)
+
+        # 5. Drop a checkpoint if needed.
+        if epoch >= opt.start_checkpoint_at:
+            trainer.drop_checkpoint(model_opt, epoch, fields, valid_stats)
+
 def check_save_model_path():
     save_model_path = os.path.abspath(opt.save_model)
     model_dirname = os.path.dirname(save_model_path)
@@ -590,9 +664,22 @@ def main():
     collect_report_features(fields)
 
     # When alpha_divergence == 0.0, use std MLE.
-    if opt.RL_algorithm is None or opt.alpha_divergence == 0.0:
+    if opt.RL_algorithm is None:
+
         # Build model.
         model = build_model(model_opt, opt, fields, checkpoint)
+
+        tally_parameters(model)
+        check_save_model_path()
+
+        # Build optimizer.
+        optim = build_optim(model, checkpoint)
+
+        # Do training.
+        train_model(model, fields, optim, data_type, model_opt)
+
+    elif opt.alpha_divergence == 0.0:
+        model = build_RL_model(model_opt, opt, fields, checkpoint)
         tally_parameters(model)
         check_save_model_path()
 

@@ -124,9 +124,13 @@ def load_test_model(opt, dummy_opt):
     for arg in dummy_opt:
         if arg not in model_opt:
             model_opt.__dict__[arg] = dummy_opt[arg]
+    if opt.RL_algorithm is None:
+        model = make_base_model(model_opt, fields,
+                                use_gpu(opt), checkpoint)
+    else:
+        model = make_RL_model(model_opt, fields,
+                              use_gpu(opt), checkpoint)
 
-    model = make_base_model(model_opt, fields,
-                            use_gpu(opt), checkpoint)
     model.eval()
     model.generator.eval()
     return fields, model, model_opt
@@ -255,13 +259,14 @@ def make_RL_model(model_opt, fields, gpu, checkpoint=None):
     """
 
     # Only support text now.
-    assert model_opt.model_type is "text"
+    # assert model_opt.model_type is "text"
 
     # Make encoder.
     src_dict = fields["src"].vocab
     feature_dicts = onmt.io.collect_feature_vocabs(fields, 'src')
     src_embeddings = make_embeddings(model_opt, src_dict,
                                      feature_dicts)
+    encoder = make_encoder(model_opt, src_embeddings)
 
     # Make decoder.
     tgt_dict = fields["tgt"].vocab
@@ -290,7 +295,7 @@ def make_RL_model(model_opt, fields, gpu, checkpoint=None):
             generator = CopyGenerator(model_opt.rnn_size,
                                       fields["tgt"].vocab)
     else:
-        generator = DdpgOffPolicy.QueryGenerator(model_opt,
+        generator = onmt.modules.DdpgOffPolicy.QueryGenerator(model_opt,
                                                  tgt_embeddings,
                                                  len(fields["tgt"].vocab))
 
@@ -301,32 +306,38 @@ def make_RL_model(model_opt, fields, gpu, checkpoint=None):
                      generator)
     model.model_type = model_opt.model_type
 
+    pretrain = True
+    if pretrain:
     # Load the model states from checkpoint or initialize them.
-    if checkpoint is not None:
-        print('Loading model parameters.')
-        model.load_state_dict(checkpoint['model'])
-        generator.load_state_dict(checkpoint['generator'])
-    else:
-        if model_opt.param_init != 0.0:
-            print('Intializing model parameters.')
-            for p in model.parameters():
-                p.data.uniform_(-model_opt.param_init, model_opt.param_init)
-            for p in generator.parameters():
-                p.data.uniform_(-model_opt.param_init, model_opt.param_init)
-        if model_opt.param_init_glorot:
-            for p in model.parameters():
-                if p.dim() > 1:
-                    xavier_uniform(p)
-            for p in generator.parameters():
-                if p.dim() > 1:
-                    xavier_uniform(p)
+        if checkpoint is not None:
+            print('Loading model parameters.')
+            model_dict = model.state_dict()
+            pretrained_dict = checkpoint['model']
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+            model_dict.update(pretrained_dict)
+            model.load_state_dict(model_dict)
+            generator.load_state_dict(checkpoint['generator'])
+        else:
+            if model_opt.param_init != 0.0:
+                print('Intializing model parameters.')
+                for p in model.parameters():
+                    p.data.uniform_(-model_opt.param_init, model_opt.param_init)
+                for p in generator.parameters():
+                    p.data.uniform_(-model_opt.param_init, model_opt.param_init)
+            if model_opt.param_init_glorot:
+                for p in model.parameters():
+                    if p.dim() > 1:
+                        xavier_uniform(p)
+                for p in generator.parameters():
+                    if p.dim() > 1:
+                        xavier_uniform(p)
 
-        if hasattr(model.encoder, 'embeddings'):
-            model.encoder.embeddings.load_pretrained_vectors(
-                    model_opt.pre_word_vecs_enc, model_opt.fix_word_vecs_enc)
-        if hasattr(model.dec_embed_layer, 'embeddings'):
-            model.dec_embed_layer.load_pretrained_vectors(
-                    model_opt.pre_word_vecs_dec, model_opt.fix_word_vecs_dec)
+            if hasattr(model.encoder, 'embeddings'):
+                model.encoder.embeddings.load_pretrained_vectors(
+                        model_opt.pre_word_vecs_enc, model_opt.fix_word_vecs_enc)
+            if hasattr(model.dec_embed_layer, 'embeddings'):
+                model.dec_embed_layer.load_pretrained_vectors(
+                        model_opt.pre_word_vecs_dec, model_opt.fix_word_vecs_dec)
 
     # Add generator to model (this registers it as parameter of model).
     model.generator = generator
