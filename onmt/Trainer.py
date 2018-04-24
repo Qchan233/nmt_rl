@@ -550,4 +550,5 @@ class RL_Trainer(object):
                     dec_state.detach()
 
         if self.grad_accum_count > 1:
-            self.optim.step()
+            self.optim_critic.step()
+            self.optim_actor.step
