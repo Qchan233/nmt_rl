@@ -524,24 +524,19 @@ class RL_Trainer(object):
 
             tgt_outer = onmt.io.make_features(batch, 'tgt')
 
-            for j in range(0, target_size-1, trunc_size):
-                # 1. Create truncated target.
-                tgt = tgt_outer[j: j + trunc_size]
+            # 3. Compute loss in shards for memory efficiency.
+            batch_stats = self.train_loss._compute_loss()
 
+            # 4. Update the parameters and statistics.
+            if self.grad_accum_count == 1:
+                self.optim_critic.step()
+                self.optim_actor.step()
+            total_stats.update(batch_stats)
+            report_stats.update(batch_stats)
 
-                # 3. Compute loss in shards for memory efficiency.
-                batch_stats = self.train_loss._compute_loss()
-
-                # 4. Update the parameters and statistics.
-                if self.grad_accum_count == 1:
-                    self.optim_critic.step()
-                    self.optim_actor.step()
-                total_stats.update(batch_stats)
-                report_stats.update(batch_stats)
-
-                # If truncated, don't backprop fully.
-                if dec_state is not None:
-                    dec_state.detach()
+            # If truncated, don't backprop fully.
+            if dec_state is not None:
+                dec_state.detach()
 
         if self.grad_accum_count > 1:
             self.optim_critic.step()
